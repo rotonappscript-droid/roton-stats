@@ -257,3 +257,8 @@ svg text{fill:var(--muted);font:500 10.5px var(--mono)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 @keyframes rise{from{opacity:.001;transform:translateY(6px)}to{opacity:1;transform:none}}
 .rise{animation:rise .45s cubic-bezier(.2,.8,.2,1) both}
+@media (max-width:640px){
+  .bar-in{flex-wrap:wrap;border-radius:22px;row-gap:8px}
+  .tabs{order:3;flex:1 0 100%;margin-left:0;justify-content:space-between}
+  .tab{flex:1}
+}
