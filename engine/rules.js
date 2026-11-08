@@ -1199,6 +1199,41 @@ function buildWeeklyContacts_(week){
   return { week: week, done: done.length, dropped: dropped.length, open: DB.tasks.filter(function(t){ return t.status === 'open'; }).length };
 }
 
+/* ---- where the radio abroad comes from, without guessing ----
+   A market can be both mailed by us and worked by a licensing partner (e.g. Russia sent + licensed). Plays from a station we
+   mailed in such a market cannot be credited to either side, so they sit in their own "shared" bucket instead of being forced
+   into "contacted" or "licensing". Buckets:
+     us       station on our list, in a territory we sent, no active licensing deal there
+     shared   station on our list, in a territory we sent, and a licensing partner is active in that market
+     partner  station not mailed by us, in a market with an active licensing partner
+     organic  everything else abroad                                                                                    */
+function licAllSet_(ctx){
+  var set = {};
+  ((ctx && ctx.licensing) || []).forEach(function(l){ if (String(l.status || '') !== 'started') return;
+    String(l.country || '').split(/\s*(?:\+|,|\/|&|\band\b)\s*/i).forEach(function(p){ p = p.trim(); if (!p) return;
+      if (/^(ww|worldwide|world)$/i.test(p)){ set['*'] = { name: 'Worldwide', company: l.company || '' }; return; }
+      (/^cis$/i.test(p) ? CIS_ : [p]).forEach(function(c){ set[ctryKey_(c)] = { name: c, company: l.company || '' }; }); }); });
+  return set;
+}
+function licFor_(set, k){ return set[k] || (set['*'] && k !== ctryKey_(HOME_MARKET) ? { name: set['*'].name, company: set['*'].company } : null); }
+function attribution_(F, ctx, SV){
+  var home = ctryKey_(HOME_MARKET), lic = licAllSet_(ctx), sent = {};
+  ((ctx && ctx.territories) || []).forEach(function(t){ if (t.sent) sent[ctryKey_(t.name)] = 1; });
+  var A = { us: 0, shared: 0, partner: 0, organic: 0, total: 0, sharedMarkets: {}, partnerMarkets: {} };
+  (F.stations_c || []).forEach(function(s){
+    var k = ctryKey_(s.country); if (!s.plays || !k || k === home) return;
+    var mailed = !!(s._contact && SV && SV.contactsOk && sent[s._contact.ck]);
+    var L = licFor_(lic, k), src = mailed ? (L ? 'shared' : 'us') : (L ? 'partner' : 'organic');
+    s._source = src; A[src] += s.plays; A.total += s.plays;
+    if (src === 'shared') A.sharedMarkets[s.country] = (A.sharedMarkets[s.country] || 0) + s.plays;
+    if (src === 'partner') A.partnerMarkets[s.country] = (A.partnerMarkets[s.country] || 0) + s.plays;
+  });
+  A.licensed = Object.keys(lic).map(function(k){ return { name: lic[k].name, company: lic[k].company, sent: !!sent[k] }; });
+  A.overlap = A.licensed.filter(function(l){ return l.sent; }).map(function(l){ return l.name; });
+  if (lic['*']) A.overlap = Object.keys(sent).filter(function(k){ return k !== home; }).map(function(k){ var t = ((ctx && ctx.territories) || []).filter(function(x){ return ctryKey_(x.name) === k; })[0]; return t ? t.name : k; });
+  return A;
+}
+
 /* ===================== public API ===================== */
 function strip_(F){ return JSON.parse(JSON.stringify(F, function(k, v){ return (k && k.charAt(0) === '_') ? undefined : v; })); }
 function clone_(x){ return x == null ? x : JSON.parse(JSON.stringify(x)); }
@@ -1243,11 +1278,13 @@ function analyze(display, week, cmpWeek){
   var read = buildRead_(F, prevF, ctx);
   var SV = null; try { SV = buildServicing_(F, ctx); } catch (e) { SV = null; }
   var I = buildInsights_(F, ctx, SV);
+  var AT = attribution_(F, ctx, SV), licK = licAllSet_(ctx);
   var svOut = SV ? { mode: SV.mode, contactsOk: SV.contactsOk, read: SV.read, contacted: SV.contacted || 0, playing: SV.playing || 0, plays: SV.plays || 0,
     newPlaying: SV.newPlaying || 0, rows: SV.allRows || [], noContacts: SV.noContacts || [], planned: SV.planned || [], cats: SV.cats || null, organic: SV.organic || 0,
     intlPlays: SV.intlPlays || 0, intlStations: SV.intlStations || 0, onList: SV.onList || [], sentCount: SV.sentCount || 0 } : null;
-  var stations = (F.stations_c || []).map(function(s){ var o = strip_(s); o.contacted = !!s._contact; return o; });
-  return { F: strip_(F), prev: prevF ? strip_(prevF) : null, cmpWeek: cmp ? cmp.week : null, read: read, servicing: svOut,
+  if (svOut) svOut.rows = svOut.rows.map(function(r){ var l = licFor_(licK, ctryKey_(r.name)); r.licensed = l ? l.company || 'licensing partner' : ''; return r; });
+  var stations = (F.stations_c || []).map(function(s){ var o = strip_(s); o.contacted = !!s._contact; o.source = s._source || (ctryKey_(s.country) === ctryKey_(HOME_MARKET) ? 'home' : 'organic'); return o; });
+  return { F: strip_(F), prev: prevF ? strip_(prevF) : null, cmpWeek: cmp ? cmp.week : null, read: read, servicing: svOut, attribution: AT,
     insights: { split: I.split, send: I.send.filter(function(m){ return m.name; }), push: I.push.map(strip_), find: I.find.map(strip_), outside: I.outside, follow: I.follow, streaming: I.streaming, intlPlays: I.intlPlays,
       markets: I.markets.filter(function(m){ return m.name; }).map(function(m){ return { name: m.name, plays: m.plays, stations: m.stations, rank: m.rank }; }) },
     stations: stations, airplay: airplayChartsFor_(display), ctx: ctx };

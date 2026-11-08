@@ -13,6 +13,7 @@ const human = n => n == null || isNaN(n) ? '—' : S.E.human(n);
 const wk = w => { const m = String(w || '').match(/Week\s+(\d+)/i); return m ? 'W' + m[1] : String(w || ''); };
 const weekId = w => { const m = String(w).match(/Week\s+(\d+)\s+(\d{4})/); return m ? `${m[2]}-W${m[1].padStart(2, '0')}` : w; };
 const widx = w => S.E.repWeekIdx(w);
+const SHEET_ID = '19Ea-TEkzIIQoLJa-7qAAZrj6SvNoEcMQHsdqtFYzUJE';
 const DATA = { songs: 'db/songs.json', history: 'db/history.json', contacts: 'db/contacts.json', registry: 'db/registry.json', airplay: 'db/airplay.json', tasks: 'db/tasks.json', lists: 'db/lists.json' };
 
 function delta(cur, prev, { pct = false, money = false } = {}){
@@ -121,16 +122,15 @@ function viewTracks(){
       const pct = F.avg_day != null && P && P.avg_day ? (F.avg_day - P.avg_day) / P.avg_day * 100 : null; if (pct != null && pct <= -15) tags.push('<span class="tag warn">Spotify cooling</span>'); if (pct != null && pct >= 5) tags.push('<span class="tag ok">Spotify up</span>'); }
     return `<a class="card glass" href="#t-${s.id}">
       <div class="card-top">${cover(s)}<div class="ttl"><h3>${esc(s.name)}</h3><p>${esc(s.artist)}</p></div></div>
-      ${last ? `<div class="card-nums"><div class="mini"><div class="l">Radio plays</div><div class="v">${human(F.radio_plays)}</div>${delta(F.radio_plays, P && P.radio_plays)}</div>
-        <div class="mini"><div class="l">Spotify / day</div><div class="v">${human(F.avg_day)}</div>${delta(F.avg_day, P && P.avg_day, { pct: true })}</div></div>
-        ${spark(sn.slice(-10).map(r => r.f.radio_plays))}` : ''}
-      <div class="card-foot"><div class="tags">${tags.join('') || '<span class="tag">Steady</span>'}</div><span class="mono faint" style="font-size:11px">${last ? wk(last.week) : ''}</span></div></a>`;
+      ${`<div class="card-nums"><div class="mini"><div class="l">Radio plays</div><div class="v">${F ? human(F.radio_plays) : '—'}</div>${delta(F && F.radio_plays, P && P.radio_plays)}</div>
+        <div class="mini"><div class="l">Spotify / day</div><div class="v">${F ? human(F.avg_day) : '—'}</div>${delta(F && F.avg_day, P && P.avg_day, { pct: true })}</div></div>
+        ${spark(sn.slice(-10).map(r => r.f.radio_plays))}`}
+      <div class="card-foot"><div class="tags">${tags.join('') || '<span class="tag">—</span>'}</div><span class="mono faint" style="font-size:11px">${last ? wk(last.week) : ''}</span></div></a>`;
   };
   const score = s => { const sn = snaps(s), l = sn[sn.length - 1]; return l ? (l.week === lw ? 1e9 : 0) + (l.f.radio_plays || 0) : -1; };
   const active = songs.filter(s => !s.archived).sort((a, b) => score(b) - score(a)), archived = songs.filter(s => s.archived);
   const totalPlays = active.reduce((a, s) => { const sn = snaps(s), l = sn[sn.length - 1]; return a + (l && l.week === lw ? l.f.radio_plays || 0 : 0); }, 0);
-  app().innerHTML = `<section class="head"><div><div class="eyebrow">Latest report · ${esc(lw || '—')}</div><h1 class="h1">${active.length} tracks in play</h1>
-      <p class="lede">${fmt(totalPlays)} radio plays across this week's tracks. Open a track for the full internal read, compare any two weeks, and get the partner report.</p></div>
+  app().innerHTML = `<section class="head"><div><div class="eyebrow">${esc(lw || '—')} · ${active.length} active · ${fmt(totalPlays)} radio plays</div><h1 class="h1">Tracks</h1></div>
       <div class="row"><button class="btn primary" data-go="week">Update this week</button></div></section>
     <section class="grid">${active.map(card).join('')}</section>
     ${archived.length ? `<details class="fold"><summary>Archived · ${archived.length}</summary><div class="grid">${archived.map(card).join('')}</div></details>` : ''}`;
@@ -171,40 +171,59 @@ function viewTrack(id){
 function kpi(l, v, d, sub){ return `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d || ''}${sub ? `<span>${sub}</span>` : ''}</div></div>`; }
 function rr(sv){ return sv && sv.contactsOk && sv.mode !== 'none' && sv.contacted ? sv.playing / sv.contacted * 100 : null; }
 
+function pillar(label, state, ok, value, sub){
+  return `<div class="pill-t"><div class="k">${label}<span class="st ${ok ? 'ok' : 'warn'}">${esc(state)}</span></div><div class="v">${value}</div><div class="s">${sub || '&nbsp;'}</div></div>`;
+}
 function tOverview(s, A, Ap, sn, week, cmp){
   const F = A.F, P = A.prev, V = A.read.verdicts, vs = cmp ? 'vs ' + wk(cmp) : '';
   const r = rr(A.servicing), rp = Ap ? rr(Ap.servicing) : null;
   const kp = `<section class="kpis glass">
-    ${kpi('Radio plays', F.radio_old ? human(F.radio_plays) + '<span class="faint" style="font-size:13px"> old</span>' : human(F.radio_plays), delta(F.radio_plays, P && P.radio_plays), vs)}
+    ${kpi('Radio plays', human(F.radio_plays), delta(F.radio_plays, P && P.radio_plays), vs)}
     ${kpi('Stations', F.radio_stations != null ? fmt(F.radio_stations) : '—', delta(F.radio_stations, P && P.radio_stations), vs)}
-    ${kpi('New this week', fmt(F.new_adds || 0), F.new_major_n ? `<span class="delta up">${F.new_major_n} major</span>` : '', 'first plays, last 7 days')}
+    ${kpi('New stations', fmt(F.new_adds || 0), F.new_major_n ? `<span class="delta up">${F.new_major_n} priority</span>` : '', 'first play ≤ 7 days')}
     ${kpi('Spotify / day', human(F.avg_day), delta(F.avg_day, P && P.avg_day, { pct: true }), vs)}
-    ${kpi('Response rate', r == null ? '—' : r.toFixed(0) + '%', r != null && rp != null ? `<span class="delta ${r > rp ? 'up' : r < rp ? 'dn' : 'fl'}">${r >= rp ? '+' : '−'}${Math.abs(r - rp).toFixed(0)} pts</span>` : '', A.servicing && A.servicing.contacted ? `${A.servicing.playing} of ${A.servicing.contacted} contacted` : 'no territory sent')}
+    ${kpi('Response rate', r == null ? '—' : r.toFixed(0) + '%', r != null && rp != null ? `<span class="delta ${r > rp ? 'up' : r < rp ? 'dn' : 'fl'}">${r >= rp ? '+' : '−'}${Math.abs(r - rp).toFixed(0)} pts</span>` : '', A.servicing && A.servicing.contacted ? `${A.servicing.playing}/${A.servicing.contacted} mailed` : 'nothing sent')}
     ${kpi('Playlist reach', human(F.reach), delta(F.reach, P && P.reach), F.playlists_total ? `${F.playlists_total} playlists` : '')}
   </section>`;
-  const vcard = (k, label) => { const v = V[k]; return `<div class="verdict"><div class="k">${label}<i class="dot ${v.badge === 'ok' ? 'ok' : 'warn'}"></i></div><div class="t">${esc(v.verdict)}</div><p>${esc(v.body)}</p></div>`; };
-  const read = `<section class="panel glass"><div class="ph"><h2>The week in one read</h2><span class="s">${esc(week)}${cmp ? ' · compared with ' + esc(cmp) : ''}</span></div>
-    <p class="read">${A.read.narrative}</p>
-    <div class="verdicts">${vcard('radio', 'Radio')}${vcard('streaming', 'Streaming')}${vcard('shazam', 'Shazam')}${vcard('social', 'Social')}</div>
-    ${A.read.checks.length ? `<div class="checks"><b>Data check.</b> ${A.read.checks.map(esc).join(' ')}</div>` : ''}
-    ${F.legacy ? `<p class="note" style="margin-top:14px">Imported from the old app. Weeks before the switch keep the top 60 stations, so “new this week” and station-level detail are complete from the first week built here.</p>` : ''}
-    ${F.radio_old || F.songstats_old ? `<div class="checks"><b>Carried over.</b> ${F.radio_old ? 'Radio is from ' + esc(F.radio_old) + '. ' : ''}${F.songstats_old ? 'Playlists, Shazam and social are from ' + esc(F.songstats_old) + '.' : ''}</div>` : ''}</section>`;
-  const I = A.insights;
-  const li = (rows, f) => rows.length ? `<ul class="list">${rows.map(f).join('')}</ul>` : '<div class="empty">Nothing this week.</div>';
-  const moves = `<section class="moves">
-    <div class="panel glass move"><h3><span class="i">01</span>Expand</h3>
-      <div class="sublabel">Send these markets</div>${li(I.send, m => `<li><span class="x"><b>${esc(m.name)}</b><span>${m.rank ? '#' + m.rank + ' market abroad' : ''}${m.shazam ? ' · Shazam #' + m.shazam.peak : ''} · ${m.withContact} contacts on our list</span></span><span class="r">${fmt(m.plays)} plays</span></li>`)}
-      <div class="sublabel">Push to rotation</div>${li(I.push, x => `<li><span class="x"><b>${x.tier === 1 || x.tier === 2 ? '<span class="star">★</span> ' : ''}${esc(x.station)}</b><span>${esc(x.country)} · new this week</span></span><span class="r">${x.plays} play${x.plays > 1 ? 's' : ''}</span></li>`)}
-      <div class="sublabel">Find a contact</div>${li(I.find, x => `<li><span class="x"><b>${esc(x.station)}</b><span>${esc(x.country)} · not on our list</span></span><span class="r">${fmt(x.plays)}</span></li>`)}
-      ${I.outside.length ? `<div class="sublabel">Outside our list</div>${li(I.outside, o => `<li><span class="x"><b>${esc(o.name)}</b><span>${o.onList} stations on our list, none with a contact</span></span><span class="r">Shazam #${o.peak}</span></li>`)}` : ''}</div>
-    <div class="panel glass move"><h3><span class="i">02</span>Follow up</h3><div class="sublabel">Contacted, not playing yet</div>
-      ${li(I.follow, f => `<li><span class="x"><b>${esc(f.station)}</b><span>${esc(f.country)}${f.type ? ' · ' + esc(f.type) : ''}</span><span>Angle: ${esc(f.angle)}</span></span></li>`)}</div>
-    <div class="panel glass move"><h3><span class="i">03</span>${esc(I.streaming.title)}</h3><p class="muted" style="margin:12px 0 0;line-height:1.55">${I.streaming.text || 'No streaming baseline yet.'}</p></div>
+  const topShz = (F.shazam || []).slice().sort((a, b) => (parseInt(String(a.peak).replace('#', '')) || 999) - (parseInt(String(b.peak).replace('#', '')) || 999))[0];
+  const topMk = (F.markets || []).find(m => S.E.norm(m[0]) !== S.E.norm(S.E.HOME_MARKET));
+  const status = `<section class="pillars glass">
+    ${pillar('Radio', V.radio.verdict, V.radio.badge === 'ok', `${human(F.radio_plays)}<small> plays</small>`, topMk ? `Top abroad: ${esc(topMk[0])} · ${human(topMk[1])}` : 'Home market only')}
+    ${pillar('Streaming', V.streaming.verdict, V.streaming.badge === 'ok', `${human(F.avg_day)}<small> / day</small>`, `${fmt(F.playlists_cur)} playlists · ${(F.dropped || []).length} dropped`)}
+    ${pillar('Shazam', V.shazam.verdict, V.shazam.badge === 'ok', `${fmt(F.shazam_rows || 0)}<small> charts</small>`, topShz ? `Peak: ${esc(String(topShz.name).split(' - ')[0])} ${esc(topShz.peak)}` : 'Not charting')}
+    ${pillar('Social', V.social.verdict, V.social.badge === 'ok', `${human((F.tk_views || 0) + (F.ig_views || 0) + (F.yt_sh_views || 0))}<small> short-form</small>`, `TikTok ${human(F.tk_views)} · IG ${human(F.ig_views)}`)}
   </section>`;
+  const flags = [];
+  A.read.checks.forEach(c => flags.push(`<span class="flag bad" title="${esc(c)}">Data check: ${esc(c.replace(/^[^:]*:\s*/, '').slice(0, 70))}</span>`));
+  if (F.radio_old) flags.push(`<span class="flag">Radio carried from ${esc(wk(F.radio_old))}</span>`);
+  if (F.songstats_old) flags.push(`<span class="flag">Songstats carried from ${esc(wk(F.songstats_old))}</span>`);
+  if (F.legacy) flags.push(`<span class="flag">Imported week · top 60 stations</span>`);
+  const flagRow = flags.length ? `<div class="flags">${flags.join('')}</div>` : '';
   const series = sn.map(r => ({ w: r.week, v: r.f.radio_plays }));
-  const charts = `<section class="cols"><div class="panel glass c7"><div class="ph"><h2>Radio plays to date</h2><span class="s">by report week</span></div>${areaChart(series, { cur: week, cmp })}</div>
-    <div class="panel glass c5"><div class="ph"><h2>Radio activity</h2><span class="s">top markets</span></div>${heatmap(sn, week)}</div></section>`;
-  return kp + read + charts + moves;
+  const charts = `<section class="cols"><div class="panel glass c7"><div class="ph"><h2>Radio plays</h2><span class="s">cumulative · by report week</span></div>${areaChart(series, { cur: week, cmp })}</div>
+    <div class="panel glass c5"><div class="ph"><h2>Activity by market</h2><span class="s">plays gained per week</span></div>${heatmap(sn, week)}</div></section>`;
+  const I = A.insights;
+  const expand = [].concat(
+    I.send.map(m => ['send', m.name, '', m.plays, `${m.withContact} contacts`]),
+    I.push.map(x => ['push', (x.tier === 1 || x.tier === 2 ? '★ ' : '') + x.station, x.country, x.plays, 'new this week']),
+    I.find.map(x => ['find', x.station, x.country, x.plays, 'not on list']),
+    I.outside.map(o => ['build', o.name, '', null, 'Shazam #' + o.peak]));
+  const ACT = { send: 'Send', push: 'Push', find: 'Find contact', build: 'Build list' };
+  const tbl = (head, rows) => rows.length ? `<div class="tw"><table class="fixed"><thead><tr>${head.map(h => `<th class="${h[1] || ''}">${h[0]}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>` : '<div class="empty">—</div>';
+  const moves = `<section class="moves">
+    <div class="panel glass move"><div class="ph"><h2><span class="i">01</span>Expand</h2><span class="s">${expand.length}</span></div>
+      ${tbl([['Action'], ['Where'], ['Plays', 'r']], expand.slice(0, 12).map(([a, n, c, p, note]) => `<tr><td><span class="act ${a}">${ACT[a]}</span></td><td><b>${esc(n)}</b><span class="sub">${esc([c, note].filter(Boolean).join(' · '))}</span></td><td class="r num">${p == null ? '—' : fmt(p)}</td></tr>`))}</div>
+    <div class="panel glass move"><div class="ph"><h2><span class="i">02</span>Follow up</h2><span class="s">${I.follow.length}</span></div>
+      ${tbl([['Station'], ['Type', 'r']], I.follow.slice(0, 12).map(f => `<tr><td><b>${esc(f.station)}</b><span class="sub">${esc(f.country)}</span></td><td class="r muted">${esc(f.type || '—')}</td></tr>`))}</div>
+    <div class="panel glass move"><div class="ph"><h2><span class="i">03</span>Streaming</h2><span class="s">${esc(V.streaming.verdict)}</span></div>
+      ${tbl([['Metric'], ['Now', 'r'], ['Change', 'r']], [
+        `<tr><td>Spotify / day</td><td class="r num">${human(F.avg_day)}</td><td class="r">${delta(F.avg_day, P && P.avg_day, { pct: true })}</td></tr>`,
+        `<tr><td>Playlists now</td><td class="r num">${fmt(F.playlists_cur)}</td><td class="r">${delta(F.playlists_cur, P && P.playlists_cur)}</td></tr>`,
+        `<tr><td>Playlist reach</td><td class="r num">${human(F.reach)}</td><td class="r">${delta(F.reach, P && P.reach)}</td></tr>`,
+        `<tr><td>Editorial</td><td class="r num">${fmt(F.editorial_cur || 0)}</td><td class="r"></td></tr>`,
+        ...(F.dropped || []).slice(0, 4).map(p => `<tr><td><span class="act find">Re-pitch</span> ${esc(p.name)}</td><td class="r num">${human(p.followers)}</td><td class="r muted mono" style="font-size:11px">${esc(p.removed)}</td></tr>`)])}</div>
+  </section>`;
+  return kp + status + flagRow + charts + moves;
 }
 
 function tRadio(s, A, Ap, sn, week){
@@ -220,29 +239,39 @@ function tRadio(s, A, Ap, sn, week){
       ${now.length ? `<div class="row" style="margin-bottom:12px">${now.map(([m, p]) => `<span class="chip"><b>#${p}</b> ${esc(m)}</span>`).join('')}</div>` : ''}
       ${air.length ? `<div class="tw"><table><thead><tr><th>Market</th><th class="r">Now</th><th class="r">Peak</th><th class="r">Weeks</th><th class="r">Chart</th></tr></thead><tbody>${air.map(a => `<tr><td>${esc(S.E.rmName(a.market))}</td><td class="r num">${esc(a.current)}</td><td class="r num"><b>#${esc(a.peak)}</b></td><td class="r num muted">${esc(a.weeks)}</td><td class="r num muted">Top ${esc(a.tier)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No airplay chart positions recorded.</div>'}</div>
     <div class="panel glass c12"><div class="ph"><h2>All stations</h2><input class="search" id="stq" placeholder="Filter stations or markets" aria-label="Filter stations"></div>
-      <div class="tw"><table id="sttable"><thead><tr><th>Station</th><th>Where</th><th>Contact</th><th class="r">First play</th><th class="r">Plays</th></tr></thead><tbody>
-      ${A.stations.map(x => `<tr><td>${x.tier === 1 || x.tier === 2 ? '<span class="star">★</span> ' : ''}${esc(x.station)}${x.isNew ? ' <span class="tag hot">new</span>' : ''}</td><td class="muted">${esc(x.location || x.country)}</td><td>${S.E.norm(x.country) === 'romania' ? '<span class="faint">home</span>' : x.contacted ? '<span class="tag ok">on list</span>' : '<span class="faint">—</span>'}</td><td class="r num muted">${esc(x.first || '')}</td><td class="r num">${fmt(x.plays)}</td></tr>`).join('')}
-      </tbody></table></div><p class="note">★ priority station in its market. Station names merge feeds of the same station.</p></div></section>`;
+      <div class="tw"><table id="sttable"><thead><tr><th>Station</th><th>Where</th><th>Source</th><th class="r">First play</th><th class="r">Plays</th></tr></thead><tbody>
+      ${A.stations.map(x => `<tr><td>${x.tier === 1 || x.tier === 2 ? '<span class="star">★</span> ' : ''}${esc(x.station)}${x.isNew ? ' <span class="tag hot">new</span>' : ''}</td><td class="muted">${esc(x.location || x.country)}</td><td>${x.source === 'home' ? '<span class="faint">home</span>' : SRC[x.source] ? `<i class="sw" style="background:${SRC[x.source][1]}"></i>${SRC[x.source][0]}` : '—'}</td><td class="r num muted">${esc(x.first || '')}</td><td class="r num">${fmt(x.plays)}</td></tr>`).join('')}
+      </tbody></table></div><p class="note">★ priority station in its market</p></div></section>`;
 }
 
+const SRC = { us: ['Us', 'var(--up)'], shared: ['Us + partner', 'var(--accent)'], partner: ['Licensing partner', 'var(--info)'], organic: ['Organic', 'var(--faint)'] };
 function tServicing(s, A){
-  const SV = A.servicing, I = A.insights;
-  if (!SV || !SV.contactsOk) return `<section class="panel glass"><div class="ph"><h2>Servicing</h2></div><p class="muted">No contact list loaded. Add it on the Contacts page.</p></section>`;
-  const r = rr(SV), tot = I.intlPlays || 0, sp = I.split;
-  const seg = (v, c) => tot ? `<span style="width:${(v / tot * 100).toFixed(1)}%;background:${c}"></span>` : '';
-  const top = `<section class="cols"><div class="panel glass c4"><div class="ph"><h2>Response rate</h2><span class="s">contacted stations on air</span></div>
-      <div class="big">${r == null ? '—' : r.toFixed(0) + '%'}</div><p class="muted" style="margin:8px 0 0">${SV.mode === 'none' ? 'No territory marked as sent for this track yet. Mark them in Setup.' : `${SV.playing} of ${SV.contacted} stations we mailed are playing it, ${fmt(SV.plays)} plays.`}</p></div>
-    <div class="panel glass c8"><div class="ph"><h2>Where the radio abroad comes from</h2><span class="s">${fmt(tot)} plays outside ${esc(S.E.HOME_MARKET)}</span></div>
-      <div class="stack">${seg(sp.contacted, 'var(--up)')}${seg(sp.licensed, 'var(--info)')}${seg(sp.other, 'var(--h2)')}</div>
-      <div class="legend2"><span><i style="background:var(--up)"></i>Contacted by us <b>${fmt(sp.contacted)}</b></span><span><i style="background:var(--info)"></i>Licensing partners${sp.licLabel ? ' (' + esc(sp.licLabel) + ')' : ''} <b>${fmt(sp.licensed)}</b></span><span><i style="background:var(--h2)"></i>Organic <b>${fmt(sp.other)}</b></span></div>
-      ${SV.read ? `<p class="read" style="font-size:14px;margin-top:14px;color:var(--muted)">${SV.read}</p>` : ''}</div></section>`;
+  const SV = A.servicing, AT = A.attribution;
+  if (!SV || !SV.contactsOk) return `<section class="panel glass"><div class="ph"><h2>Servicing</h2></div><div class="empty">No contact list loaded.</div></section>`;
+  const r = rr(SV);
+  const k = `<section class="kpis glass" style="grid-template-columns:repeat(4,1fr)">
+    ${kpi('Territories sent', fmt(SV.sentCount), '', SV.planned.length ? `${SV.planned.length} planned` : '')}
+    ${kpi('Stations mailed', fmt(SV.contacted), '', 'on our list')}
+    ${kpi('Playing', fmt(SV.playing), SV.newPlaying ? `<span class="delta up">+${SV.newPlaying} new</span>` : '', `${fmt(SV.plays)} plays`)}
+    ${kpi('Response rate', r == null ? '—' : r.toFixed(0) + '%', '', 'mailed → on air')}</section>`;
+  const tot = AT.total || 0, pc = v => tot ? (v / tot * 100) : 0;
+  const mk = o => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([m, p]) => `${esc(m)} ${human(p)}`).join(', ');
+  const rowsA = [['us', ''], ['shared', mk(AT.sharedMarkets)], ['partner', mk(AT.partnerMarkets)], ['organic', '']];
+  const attr = `<section class="panel glass"><div class="ph"><h2>Where the radio abroad comes from</h2><span class="s">${fmt(tot)} plays outside ${esc(S.E.HOME_MARKET)}</span></div>
+    <div class="stack">${rowsA.map(([b]) => AT[b] ? `<span style="width:${pc(AT[b]).toFixed(2)}%;background:${SRC[b][1]}" title="${SRC[b][0]}"></span>` : '').join('')}</div>
+    <div class="tw"><table class="fixed"><thead><tr><th>Source</th><th>Rule</th><th class="r">Plays</th><th class="r">Share</th><th>Markets</th></tr></thead><tbody>
+      ${rowsA.map(([b, m]) => `<tr><td><i class="sw" style="background:${SRC[b][1]}"></i><b>${SRC[b][0]}</b></td><td class="muted">${{ us: 'Mailed by us', shared: 'Mailed by us · partner active in market', partner: 'Not mailed · partner active in market', organic: 'Not mailed · no partner' }[b]}</td><td class="r num">${fmt(AT[b])}</td><td class="r num">${pc(AT[b]).toFixed(0)}%</td><td class="muted" style="font-size:12px">${m || '—'}</td></tr>`).join('')}
+    </tbody></table></div>
+    ${AT.overlap.length ? `<div class="flags"><span class="flag warn">Sent + licensed: ${esc(AT.overlap.join(', '))} · not separable</span></div>` : ''}</section>`;
   const rows = SV.rows || [];
-  const table = rows.length ? `<section class="panel glass"><div class="ph"><h2>By territory</h2><span class="s">${SV.sentCount} sent${SV.noContacts.length ? ' · no contacts on our list: ' + esc(SV.noContacts.join(', ')) : ''}</span></div>
-    <div class="tw"><table><thead><tr><th>Territory</th><th>Wave</th><th>Channel</th><th class="r">Contacted</th><th class="r">Playing</th><th style="width:22%">Conversion</th><th class="r">Plays</th></tr></thead><tbody>
-    ${rows.map(t => `<tr><td><b>${esc(t.name)}</b></td><td class="muted">${esc(t.wave)}</td><td class="muted">${esc(t.channel)}</td><td class="r num">${t.contacted}</td><td class="r num">${t.playing}</td><td><div class="conv"><i style="width:${t.contacted ? (t.playing / t.contacted * 100).toFixed(0) : 0}%"></i></div></td><td class="r num">${fmt(t.plays)}</td></tr>`).join('')}
-    </tbody></table></div>${SV.planned.length ? `<p class="note">Planned, not sent yet: ${esc(SV.planned.join(', '))}.</p>` : ''}</section>` : '';
-  const onList = SV.mode === 'none' && SV.onList.length ? `<section class="panel glass"><div class="ph"><h2>Stations from our list already playing it</h2><span class="s">${SV.onListStations || ''}</span></div>${bars(SV.onList.map(o => [o.name, o.plays]))}</section>` : '';
-  return top + table + onList;
+  const chan = t => t.licensed ? `<span class="act shared">Direct + ${esc(t.licensed)}</span>` : esc(t.channel);
+  const table = `<section class="panel glass"><div class="ph"><h2>By territory</h2><span class="s">${rows.length} with contacts</span></div>
+    ${rows.length ? `<div class="tw"><table><thead><tr><th>Territory</th><th>Wave</th><th>Channel</th><th class="r">Mailed</th><th class="r">Playing</th><th style="width:18%">Conversion</th><th class="r">Plays</th></tr></thead><tbody>
+    ${rows.map(t => `<tr><td><b>${esc(t.name)}</b></td><td class="muted">${esc(t.wave)}</td><td>${chan(t)}</td><td class="r num">${t.contacted}</td><td class="r num">${t.playing}</td><td><div class="conv"><i style="width:${t.contacted ? (t.playing / t.contacted * 100).toFixed(0) : 0}%"></i></div></td><td class="r num">${fmt(t.plays)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="empty">No territory marked as sent. Set it in Setup.</div>'}
+    ${SV.noContacts.length || SV.planned.length ? `<div class="flags">${SV.noContacts.length ? `<span class="flag bad">Sent, no contacts: ${esc(SV.noContacts.join(', '))}</span>` : ''}${SV.planned.length ? `<span class="flag">Planned: ${esc(SV.planned.join(', '))}</span>` : ''}</div>` : ''}</section>`;
+  const leg = A.F.legacy ? `<div class="flags"><span class="flag">Imported week · top 60 stations · response rate undercounted</span></div>` : '';
+  return k + leg + attr + table;
 }
 
 function tStreaming(s, A, Ap, sn, week, cmp){
@@ -274,7 +303,7 @@ function setupPanel(s){
   <section class="panel glass"><div class="ph"><h2>Track</h2></div><div class="row">
     <label class="note" for="ssid">Songstats ID</label><input id="ssid" class="search" style="max-width:160px" value="${esc(s.songstatsId || '')}" placeholder="e.g. 75j2lkun">
     <span style="flex:1"></span><button class="btn" id="btnArchive">${s.archived ? 'Bring back' : 'Archive'}</button><button class="btn primary" id="btnSave">Save changes</button></div>
-    <p class="note">The Songstats ID is filled in automatically by the weekly sync. Change it only if the sync picked the wrong release.</p></section>`;
+</section>`;
 }
 function bindSetup(s){
   const T = s.territories = s.territories || [], re = () => viewTrack(s.id);
@@ -318,7 +347,7 @@ async function partnerSheet(s, week){
 async function viewWeek(){
   const week = S.E.weekLabelFor(new Date()), id = weekId(week);
   const active = S.D.songs.filter(s => !s.archived);
-  app().innerHTML = `<section class="head"><div><div class="eyebrow">Weekly update</div><h1 class="h1">${esc(week)}</h1><p class="lede">Songstats arrives on its own. Drop in the Spotify for Artists exports and the Radiomonitor file, then build the week.</p></div></section><div id="wk">Loading…</div>`;
+  app().innerHTML = `<section class="head"><div><div class="eyebrow">Weekly update</div><h1 class="h1">${esc(week)}</h1></div></section><div id="wk">Loading…</div>`;
   const meta = await S.store.readJSON(`songstats/${id}/_meta.json`).catch(() => null);
   const built = new Set(Object.entries(S.D.history).filter(([, l]) => l.some(r => r.week === week)).map(([k]) => k));
   const { bySong, unmatched } = matchTimelines(S.E, S.inbox.timelines);
@@ -329,20 +358,20 @@ async function viewWeek(){
   const ready = active.filter(s => ssOk(s.id) || bySong[s.id]);
   $('#wk').outerHTML = `<section class="steps">
     <div class="step glass"><div class="sn"><b>STEP 1 · AUTOMATIC</b><i class="dot ${ssCount ? 'ok' : 'warn'}"></i></div><h3>Songstats</h3>
-      <p>${synced ? `Synced ${esc(synced)}. ${ssCount} of ${active.length} tracks have this week's radio, playlists, Shazam and social.` : S.store.mode === 'demo' ? 'In the live app this syncs on its own every Thursday night.' : 'Not synced for this week yet. It runs on its own every Thursday night.'}</p>
+      <p class="mono" style="font-size:12px">${synced ? `${esc(synced)} · ${ssCount}/${active.length}` : 'Thursday 21:00 · auto'}</p>
       <ul class="checklist">${active.map(s => `<li><span class="tick ${ssOk(s.id) ? 'on' : ''}">✓</span><span class="nm">${esc(s.name)}</span>${built.has(s.id) ? '<span class="tag ok">built</span>' : ''}</li>`).join('')}</ul>
       <button class="btn sm" id="syncNow">Sync now</button></div>
     <div class="step glass"><div class="sn"><b>STEP 2 · YOU</b><i class="dot ${Object.keys(bySong).length ? 'ok' : 'warn'}"></i></div><h3>Spotify for Artists</h3>
-      <p>One timeline export per track, all at once. Files are matched by name.</p>
+      <p class="mono" style="font-size:12px">${Object.keys(bySong).length}/${active.length} · timeline CSV per track</p>
       <label class="drop" id="dropS4A"><input type="file" accept=".csv" multiple hidden id="fileS4A"><b>Drop the timeline CSVs</b><br>or click to choose</label>
       <ul class="checklist">${active.map(s => `<li><span class="tick ${bySong[s.id] ? 'on' : ''}">✓</span><span class="nm">${esc(s.name)}</span><span class="faint mono" style="font-size:11px">${bySong[s.id] ? 'ready' : 'to download'}</span></li>`).join('')}</ul>
       ${unmatched.length ? `<p class="note">Not matched to a track: ${esc(unmatched.join(', '))}</p>` : ''}</div>
     <div class="step glass"><div class="sn"><b>STEP 3 · YOU</b><i class="dot ${S.inbox.rm ? 'ok' : 'warn'}"></i></div><h3>Radiomonitor</h3>
-      <p>The weekly airplay chart export. One file covers every track.</p>
+      <p class="mono" style="font-size:12px">${S.inbox.rm ? '1 file' : '0 files'} · one file, all tracks</p>
       <label class="drop" id="dropRM"><input type="file" accept=".csv,.xlsx,.xls" hidden id="fileRM"><b>Drop the Radiomonitor file</b><br>CSV or Excel</label>
-      ${S.inbox.rm ? `<p class="note"><b>${esc(S.inbox.rm.name)}</b> · ${rmTracks} of our tracks found in it.</p>` : '<p class="note">Optional. Without it, chart positions carry over from last week.</p>'}</div>
+      ${S.inbox.rm ? `<p class="note"><b>${esc(S.inbox.rm.name)}</b> · ${rmTracks} of our tracks found in it.</p>` : '<p class="note">Optional · positions carry over</p>'}</div>
   </section>
-  <section class="buildbar glass"><div class="grow"><b>Build ${esc(week)}</b><div class="note">${ready.length} of ${active.length} tracks have data${built.size ? ` · ${built.size} already built this week (building again replaces them)` : ''}. The partner PDFs render on GitHub right after.</div><div class="progress"><i id="prog"></i></div></div>
+  <section class="buildbar glass"><div class="grow"><b>Build ${esc(week)}</b><div class="note mono">${ready.length}/${active.length} ready${built.size ? ` · ${built.size} built (rebuild replaces)` : ''} · partner PDFs follow</div><div class="progress"><i id="prog"></i></div></div>
     <button class="btn primary" id="btnBuild" ${ready.length ? '' : 'disabled'}>Build week</button></section>`;
   bindDrop('dropS4A', 'fileS4A', async files => { for (const f of files) S.inbox.timelines.push({ name: f.name, text: await f.text() }); viewWeek(); });
   bindDrop('dropRM', 'fileRM', async files => { const f = files[0]; S.inbox.rm = { name: f.name, text: /\.xlsx?$/i.test(f.name) ? await xlsxToCsv(f) : await f.text() }; viewWeek(); });
@@ -396,18 +425,18 @@ function viewContacts(){
   const newN = open.filter(t => t.firstWeek === lw).length, done = T.filter(t => t.status === 'done').sort((a, b) => widx(b.closedWeek) - widx(a.closedWeek)).slice(0, 12);
   const C = S.D.contacts, info = S.E.contactListInfo(), counts = S.E.contactListCounts();
   const age = t => { const n = wi - widx(t.firstWeek) + 1; return n <= 1 ? '<span class="tag hot">new</span>' : `<span class="tag">open ${n} wks</span>`; };
-  app().innerHTML = `<section class="head"><div><div class="eyebrow">All tracks · ${esc(lw || '')}</div><h1 class="h1">New contacts to find</h1>
-      <p class="lede">Stations playing our tracks abroad with no contact on our list. Add the contact to the list and the task closes itself at the next build.</p></div></section>
+  app().innerHTML = `<section class="head"><div><div class="eyebrow">All tracks · ${esc(lw || '')}</div><h1 class="h1">New contacts to find</h1></div></section>
     <section class="kpis glass" style="grid-template-columns:repeat(4,1fr)">${kpi('Open', fmt(open.length), '', `${st.length} stations, ${mk.length} markets`)}${kpi('New this week', fmt(newN), '', '')}${kpi('Carried over', fmt(open.length - newN), '', 'still open')}${kpi('Done', fmt(done.length), '', 'contact now on the list')}</section>
     <section class="cols"><div class="panel glass c8"><div class="ph"><h2>Stations</h2><span class="s">ranked by plays across all our tracks</span></div>
       ${st.length ? `<div class="tw"><table><thead><tr><th>#</th><th>Station</th><th>Market</th><th>Tracks</th><th class="r">Plays</th><th class="r">Status</th></tr></thead><tbody>${st.slice(0, S.view.allTasks ? st.length : 25).map((t, i) => `<tr><td class="num faint">${String(i + 1).padStart(2, '0')}</td><td><b>${esc(t.station)}</b></td><td class="muted">${esc(t.country)}</td><td class="muted" style="font-size:12px">${esc(t.tracks)}</td><td class="r num">${fmt(t.plays)}</td><td class="r">${age(t)}</td></tr>`).join('')}</tbody></table></div>${st.length > 25 ? `<button class="btn sm" id="moreTasks" style="margin-top:12px">${S.view.allTasks ? 'Show top 25' : 'Show all ' + st.length}</button>` : ''}` : '<div class="empty">Every station playing our tracks abroad has a contact.</div>'}</div>
     <div class="c4" style="display:grid;gap:14px;align-content:start">
       <div class="panel glass"><div class="ph"><h2>Contact list</h2><i class="dot ${C ? 'ok' : 'bad'}"></i></div>
-        ${C ? `<p style="margin:0"><b>${esc(C.name)}</b></p><p class="note" style="margin:6px 0 12px">Updated ${esc(C.updated)} · ${fmt(info && info.stations)} stations with a working address · ${C.stats ? C.stats.countries : Object.keys(counts).length} countries</p>` : '<p class="note">No list yet.</p>'}
-        <label class="drop" id="dropC"><input type="file" accept=".xlsx" hidden id="fileC"><b>Drop the new list</b><br>File › Download › Excel from Google Sheets</label>
-        <p class="note">Only Corectă and Neverificată addresses count, the same rule as the global list.</p></div>
-      <div class="panel glass"><div class="ph"><h2>Markets to build</h2><span class="s">traction, no contact</span></div>${mk.length ? `<ul class="list">${mk.map(t => `<li><span class="x"><b>${esc(t.station)}</b><span>${esc(t.signal || t.tracks)}</span></span><span class="r">${age(t)}</span></li>`).join('')}</ul><p class="note">Target: 3 to 5 CHR or dance stations per market.</p>` : '<div class="empty">None this week.</div>'}</div>
+        ${C ? `<a class="src" href="https://docs.google.com/spreadsheets/d/${esc((C.source && C.source.id) || SHEET_ID)}/edit" target="_blank" rel="noopener"><b>${esc(C.name)}</b><span>Google Sheet ↗</span></a>
+        <dl class="dl"><dt>Contacts</dt><dd>${fmt(info && info.stations)}</dd><dt>Countries</dt><dd>${C.stats ? C.stats.countries : Object.keys(counts).length}</dd><dt>Sheet edited</dt><dd>${esc(((C.source && C.source.modified) || C.updated || '').slice(0, 10))}</dd><dt>Counts</dt><dd>Corectă + Neverificată</dd></dl>` : '<div class="empty">No list yet.</div>'}
+        <div class="row" style="margin-top:12px"><button class="btn sm" id="syncC">Sync from sheet</button><label class="btn sm" id="dropC" style="cursor:pointer"><input type="file" accept=".xlsx" hidden id="fileC">Upload .xlsx</label></div></div>
+      <div class="panel glass"><div class="ph"><h2>Markets to build</h2><span class="s">traction, no contact</span></div>${mk.length ? `<ul class="list">${mk.map(t => `<li><span class="x"><b>${esc(t.station)}</b><span>${esc(t.signal || t.tracks)}</span></span><span class="r">${age(t)}</span></li>`).join('')}</ul>` : '<div class="empty">None this week.</div>'}</div>
       <div class="panel glass"><div class="ph"><h2>Done recently</h2></div>${done.length ? `<ul class="list">${done.map(t => `<li><span class="x"><b>${esc(t.station)}</b><span>${esc(t.country)}</span></span><span class="r">${wk(t.closedWeek)}</span></li>`).join('')}</ul>` : '<div class="empty">Nothing closed yet.</div>'}</div></div></section>`;
+  $('#syncC').onclick = async () => { try { await S.store.dispatch('contacts-sync.yml'); toast(S.store.mode === 'demo' ? 'Preview: sync runs in the live app' : 'Syncing the contact list. About a minute.'); } catch (e){ toast(e.message, 5000); } };
   const mt = $('#moreTasks'); if (mt) mt.onclick = () => { S.view.allTasks = !S.view.allTasks; viewContacts(); };
   bindDrop('dropC', 'fileC', async files => {
     try {
