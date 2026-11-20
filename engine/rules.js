@@ -1010,17 +1010,19 @@ function renderPartnerV2_(F, prevF, week){
   var T=F.title, L=T+' · Roton Music', pos=function(c,p){ return (c!=null&&p!=null&&c-p>0)?('+'+human_(c-p)):''; };
   var snaps=[]; try{ snaps=trackSnaps_(T).filter(function(s){ return repWeekIdx_(s.week)<repWeekIdx_(week); }); }catch(e){}
   var soc=[['TikTok',F.tk_views||0,(F.tk_vids||0)+' creator videos'],['YouTube',F.yt_views||0,human_(F.yt_likes)+' likes'],['Instagram',F.ig_views||0,(F.ig_vids||0)+' reels']].sort(function(a,b){return b[1]-a[1];})[0];
+  // streams shown next to the social highlight: when that highlight is YouTube, count Spotify only, so YouTube is not counted twice
+  var ytHi=soc[0]==='YouTube'&&soc[1]>0, STR=ytHi?(F.total_streams||0):(F.combined||0), STRp=prevF?(ytHi?prevF.total_streams:prevF.combined):null, STRL=ytHi?'Spotify streams':'Streams', STRl=ytHi?'Spotify streams':'streams';
   var lead=[];
   if (F.radio_plays!=null){ var d=prevF&&prevF.radio_plays!=null?F.radio_plays-prevF.radio_plays:0, ds=prevF&&prevF.radio_stations!=null?F.radio_stations-prevF.radio_stations:0;
     lead.push(esc_(T)+' '+(d>0?'keeps growing on radio':'is on air')+': <b>'+human_(F.radio_plays)+' plays on '+F.radio_stations+' stations</b>'+((d>0||ds>0)?(', '+(d>0?(fmtInt_(d)+' more plays'):'')+(d>0&&ds>0?' and ':'')+(ds>0?(ds+' more stations'):'')+' than last week'):'')+'.'); }
-  var tail=[]; if (F.combined) tail.push('<b>'+human_(F.combined)+' streams</b>'); if (soc[1]) tail.push('<b>'+human_(soc[1])+' '+soc[0]+' views</b>');
+  var tail=[]; if (STR) tail.push('<b>'+human_(STR)+' '+STRl+'</b>'); if (soc[1]) tail.push('<b>'+human_(soc[1])+' '+soc[0]+' views</b>');
   if (tail.length) lead.push('It has passed '+tail.join(' and ')+'.');
   var stations=(F.stations_c&&F.stations_c.length)?F.stations_c:(F.top_stations||[]);
   var top=stations.slice().sort(function(a,b){return b.plays-a.plays;}).slice(0,8);
   var p1=T_hero_({label:'Performance snapshot', artist:F.artist||'', title:T, sub:week+' · Roton Music', lead:lead.join(' ')})
     +'<div class="body">'+T_sh_('This week','growth vs last week')
     +T_nums_([['Radio plays',F.radio_plays!=null?human_(F.radio_plays):'—',pos(F.radio_plays,prevF&&prevF.radio_plays),'up'],['Radio stations',F.radio_stations!=null?String(F.radio_stations):'—',pos(F.radio_stations,prevF&&prevF.radio_stations),'up'],
-              ['Streams',human_(F.combined),pos(F.combined,prevF&&prevF.combined),'up'],[soc[0]+' views',human_(soc[1]),soc[2],'']])
+              [STRL,human_(STR),pos(STR,STRp),'up'],[soc[0]+' views',human_(soc[1]),soc[2],'']])
     +'<div class="gap"></div><div class="two"><div>'+T_sh_('On air in','radio plays')+T_bars_((F.markets||[]).slice(0,8))+'</div>'
     +'<div>'+T_sh_('Top stations','radio plays')+(top.length?T_table_(['Station','Market','Plays'],top.map(function(s){return [T_star_(s)+esc_(s.station),T_g_(s.country),T_b_(fmtInt_(s.plays))];}),[2]):'<div class="txt">Station detail not tracked for this track.</div>')
     +'<div class="note">★ priority station in its market</div></div></div></div>'+T_foot_(L,false);
@@ -1043,7 +1045,7 @@ function renderPartnerV2_(F, prevF, week){
     var air=(F.airplay||[]).filter(function(a){return a[1]<=200;})[0];
     if (pk.length||air) facts.push((pk.length?('On the <b>Shazam charts</b> in '+esc_(joinAnd_(pk.map(function(x){return x.n.replace(/\s*-\s*/,' ')+' (#'+x.p+')';})))):'')+(pk.length&&air?', ':'')+(air?('top 200 airplay in '+esc_(rmName_(air[0]))+' (#'+air[1]+')'):'')+'.');
     var ed=(F.playlists||[]).concat(F.dropped||[]).some(function(p){return /^spotify$/i.test(p.owner);});
-    facts.push('<b>'+human_(F.combined)+' streams</b>'+(ed?', Spotify editorial support':'')+(soc[1]?(' and <b>'+human_(soc[1])+' '+soc[0]+' views</b>'):'')+'.');
+    facts.push('<b>'+human_(STR)+' '+STRl+'</b>'+(ed?', Spotify editorial support':'')+(soc[1]?(' and <b>'+human_(soc[1])+' '+soc[0]+' views</b>'):'')+'.');
     p2=T_thin_('Radio growth',false)+'<div class="body">'+T_sh_('Radio plays to date','by report week')+chart
       +(grow.length?'<div class="gap"></div>'+T_sh_('Growth by market','radio plays, '+esc_(weekLbl_(base.week))+' vs now')+T_table_(['Market',esc_(weekLbl_(base.week)),esc_(weekLbl_(week)),'Growth'],grow.map(function(g){return [T_b_(g[0]),T_g_(fmtInt_(g[1])),T_b_(fmtInt_(g[2])),'<span style="color:var(--green);font-weight:650">×'+(g[2]/g[1]).toFixed(1)+'</span>'];}),[1,2,3]):'')
       +'<div class="gap"></div>'+T_sh_('Pitch facts','ready to paste into a mail')+'<div class="facts">'+facts.map(function(f,i){return '<div><span>0'+(i+1)+'</span><span>'+f+'</span></div>';}).join('')+'</div>'
