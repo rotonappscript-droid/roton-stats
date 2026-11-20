@@ -494,7 +494,7 @@ function viewContacts(){
 function viewSettings(){
   const c = savedConnection() || {};
   app().innerHTML = `<section class="head"><div><div class="eyebrow">Settings</div><h1 class="h1">Connection</h1><p class="lede">The numbers live in a private GitHub repository. Each person connects once per device with their own access token.</p></div></section>
-    <section class="cols"><form class="panel glass form c6" id="connForm"><label>Owner<input id="cOwner" value="${esc(c.owner || '')}" placeholder="roton-music" autocomplete="off"></label>
+    <section class="cols"><form class="panel glass form c6" id="connForm"><label>Owner<input id="cOwner" value="${esc(c.owner || 'rotonappscript-droid')}" autocomplete="off"></label>
       <label>Data repository<input id="cRepo" value="${esc(c.repo || 'roton-stats-data')}" autocomplete="off"></label>
       <label>Access token<input id="cToken" type="password" value="${esc(c.token || '')}" placeholder="github_pat_…" autocomplete="off"></label>
       <div class="row"><button class="btn primary" type="submit">Connect</button>${c.token ? '<button class="btn" type="button" id="cOut">Disconnect this device</button>' : ''}</div></form>
