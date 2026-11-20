@@ -12,6 +12,12 @@ const fmt = n => n == null || isNaN(n) ? '—' : Math.round(n).toLocaleString('e
 const human = n => n == null || isNaN(n) ? '—' : S.E.human(n);
 const wk = w => { const m = String(w || '').match(/Week\s+(\d+)/i); return m ? 'W' + m[1] : String(w || ''); };
 const weekId = w => { const m = String(w).match(/Week\s+(\d+)\s+(\d{4})/); return m ? `${m[2]}-W${m[1].padStart(2, '0')}` : w; };
+const MONS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const dFmt = (iso, y = true) => { const d = new Date(iso); return isNaN(d) ? '' : `${d.getDate()} ${MONS[d.getMonth()]}${y ? ' ' + d.getFullYear() : ''}`; };
+// last update of one track, or of everything: {week, at} (at = when the week was built here; old imported weeks have none)
+function lastUpdate(s){ let best = null; for (const r of (s ? snaps(s) : Object.values(S.D.history).flat())){ const at = r.f && r.f.built_at;
+  if (!best || widx(r.week) > widx(best.week) || (r.week === best.week && at && (!best.at || at > best.at))) best = { week: r.week, at: at || null }; } return best; }
+const updText = (u, short) => !u ? 'No update yet' : (u.at ? `${short ? '' : 'Last update '}${dFmt(u.at, !short)} · ${short ? wk(u.week) : u.week}` : `${short ? '' : 'Last update '}${short ? wk(u.week) : u.week}`);
 const vsLabel = c => c === 'release' ? 'since release' : c ? 'vs ' + wk(c) : '';
 const widx = w => S.E.repWeekIdx(w);
 const SHEET_ID = '19Ea-TEkzIIQoLJa-7qAAZrj6SvNoEcMQHsdqtFYzUJE';
@@ -119,7 +125,7 @@ function viewTracks(){
     const fresh = last && last.week === lw;
     const tags = [];
     if (!last) tags.push(`<span class="tag">${s.releaseDate && s.releaseDate > new Date().toISOString().slice(0, 10) ? 'Out ' + esc(s.releaseDate.slice(5).split('-').reverse().join('.')) : 'No report yet'}</span>`);
-    else { if (!fresh) tags.push(`<span class="tag">Last ${wk(last.week)}</span>`); if (F.new_adds > 0) tags.push(`<span class="tag hot">+${F.new_adds} new station${F.new_adds > 1 ? 's' : ''}</span>`);
+    else { if (F.new_adds > 0) tags.push(`<span class="tag hot">+${F.new_adds} new station${F.new_adds > 1 ? 's' : ''}</span>`);
       const pct = F.avg_day != null && P && P.avg_day ? (F.avg_day - P.avg_day) / P.avg_day * 100 : null; if (pct != null && pct <= -15) tags.push('<span class="tag warn">Spotify cooling</span>'); if (pct != null && pct >= 5) tags.push('<span class="tag ok">Spotify up</span>'); }
     return `<article class="card glass" data-open="${s.id}" tabindex="0" aria-label="${esc(s.name)}">
       <div class="card-top">${cover(s)}<div class="ttl"><h3>${esc(s.name)}</h3><p>${esc(s.artist)}</p></div>
@@ -127,12 +133,12 @@ function viewTracks(){
       ${`<div class="card-nums"><div class="mini"><div class="l">Radio plays</div><div class="v">${F ? human(F.radio_plays) : '—'}</div>${delta(F && F.radio_plays, P && P.radio_plays)}</div>
         <div class="mini"><div class="l">Spotify / day</div><div class="v">${F ? human(F.avg_day) : '—'}</div>${delta(F && F.avg_day, P && P.avg_day, { pct: true })}</div></div>
         ${spark(sn.slice(-10).map(r => r.f.radio_plays))}`}
-      <div class="card-foot"><div class="tags">${tags.join('') || '<span class="tag">—</span>'}</div><span class="mono faint" style="font-size:11px">${last ? wk(last.week) : ''}</span></div></article>`;
+      <div class="card-foot"><div class="tags">${tags.join('') || '<span class="tag">—</span>'}</div><span class="mono faint" style="font-size:11px" title="Last update">${last ? esc(updText(lastUpdate(s), true)) : ''}</span></div></article>`;
   };
   const score = s => { const sn = snaps(s), l = sn[sn.length - 1]; return l ? (l.week === lw ? 1e9 : 0) + (l.f.radio_plays || 0) : -1; };
   const active = songs.filter(s => !s.archived).sort((a, b) => score(b) - score(a)), archived = songs.filter(s => s.archived);
   const totalPlays = active.reduce((a, s) => { const sn = snaps(s), l = sn[sn.length - 1]; return a + (l && l.week === lw ? l.f.radio_plays || 0 : 0); }, 0);
-  app().innerHTML = `<section class="head"><div><div class="eyebrow">${esc(lw || '—')} · ${active.length} active · ${fmt(totalPlays)} radio plays</div><h1 class="h1">Tracks</h1></div>
+  app().innerHTML = `<section class="head"><div><div class="eyebrow">${esc(updText(lastUpdate(null)))} · ${active.length} active · ${fmt(totalPlays)} radio plays</div><h1 class="h1">Tracks</h1></div>
       <div class="row"><button class="btn" id="addTrack">Add track</button><button class="btn primary" data-go="week">Update this week</button></div></section>
     <section class="grid">${active.map(card).join('')}</section>
     ${archived.length ? `<details class="fold" ${S.view.openArch ? 'open' : ''}><summary>Archived · ${archived.length} · not in weekly updates</summary><div class="grid">${archived.map(card).join('')}</div></details>` : ''}`;
@@ -175,7 +181,7 @@ function viewTrack(id){
   let cmp = S.view.cmp[id]; if (cmp === undefined || cmp === week || (cmp && cmp !== 'release' && !weeks.includes(cmp))) cmp = prevOf(week);
   const rel = s.releaseDate ? `Released ${new Date(s.releaseDate + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}` : '';
   const head = `<section class="hero">${cover(s, 'lg')}
-    <div class="meta"><div class="eyebrow"><a href="#tracks" style="text-decoration:none">Tracks</a> / ${s.archived ? 'Archived' : 'Active'}${rel ? ' · ' + rel : ''}</div>
+    <div class="meta"><div class="eyebrow"><a href="#tracks" style="text-decoration:none">Tracks</a> / ${s.archived ? 'Archived' : 'Active'}${rel ? ' · ' + rel : ''} · ${esc(updText(lastUpdate(s)))}</div>
       <h1 class="t">${esc(s.name)}</h1><div class="a">${esc(s.artist)}</div>
       ${weeks.length ? `<div class="controls"><select class="pill" id="selWeek" aria-label="Report week">${weeks.map(w => `<option ${w === week ? 'selected' : ''} value="${esc(w)}">${esc(w)}</option>`).join('')}</select>
         <span class="vs">vs</span><select class="pill" id="selCmp" aria-label="Compare with">${weeks.filter(w => w !== week).map(w => `<option ${w === cmp ? 'selected' : ''} value="${esc(w)}">${esc(w)}</option>`).join('')}<option value="release" ${cmp === 'release' ? 'selected' : ''}>since release</option><option value="" ${!cmp ? 'selected' : ''}>no comparison</option></select>
@@ -414,10 +420,11 @@ async function viewWeek(){
   const rmTracks = S.inbox.rm ? active.filter(s => S.E.norm(S.inbox.rm.text).includes(S.E.norm(s.name).slice(0, 12))).length : 0;
   const ready = active.filter(s => ssOk(s.id) || bySong[s.id]);
   $('#wk').outerHTML = `<section class="steps">
-    <div class="step glass"><div class="sn"><b>STEP 1 · AUTOMATIC</b><i class="dot ${ssCount ? 'ok' : 'warn'}"></i></div><h3>Songstats</h3>
-      <p class="mono" style="font-size:12px">${synced ? `${esc(synced)} · ${ssCount}/${active.length}` : 'Thursday 21:00 · auto'}</p>
-      <ul class="checklist">${active.map(s => `<li><span class="tick ${ssOk(s.id) ? 'on' : ''}">✓</span><span class="nm">${esc(s.name)}</span>${S.inbox.zips[s.id] && !ssApi(s.id) ? '<span class="faint mono" style="font-size:11px">zip</span>' : ''}${built.has(s.id) ? '<span class="tag ok">built</span>' : ''}</li>`).join('')}</ul>
-      <div class="row"><button class="btn sm" id="syncNow">Sync now</button><label class="btn sm" id="dropZip" style="cursor:pointer"><input type="file" accept=".zip" multiple hidden id="fileZip">Add ZIP exports</label></div>
+    <div class="step glass"><div class="sn"><b>STEP 1 · ${meta ? 'AUTOMATIC' : 'YOU'}</b><i class="dot ${ssCount ? 'ok' : 'warn'}"></i></div><h3>Songstats</h3>
+      <p class="mono" style="font-size:12px">${ssCount}/${active.length} · ${synced ? 'synced ' + esc(synced) : 'Track Report ZIP per track'}</p>
+      <label class="drop" id="dropZip"><input type="file" accept=".zip" multiple hidden id="fileZip"><b>Drop the Track Report ZIPs</b><br>or click to choose</label>
+      <ul class="checklist">${active.map(s => `<li><span class="tick ${ssOk(s.id) ? 'on' : ''}">✓</span><span class="nm">${esc(s.name)}</span>${built.has(s.id) ? '<span class="tag ok">built</span>' : `<span class="faint mono" style="font-size:11px">${esc(updText(lastUpdate(s), true))}</span>`}</li>`).join('')}</ul>
+      ${meta ? '<button class="btn sm" id="syncNow">Sync now</button>' : ''}
       ${S.inbox.zipMiss && S.inbox.zipMiss.length ? `<p class="note">Not matched to a track: ${esc(S.inbox.zipMiss.join(', '))}</p>` : ''}</div>
     <div class="step glass"><div class="sn"><b>STEP 2 · YOU</b><i class="dot ${Object.keys(bySong).length ? 'ok' : 'warn'}"></i></div><h3>Spotify for Artists</h3>
       <p class="mono" style="font-size:12px">${Object.keys(bySong).length}/${active.length} · timeline CSV per track</p>
@@ -440,7 +447,7 @@ async function viewWeek(){
       const song = S.E.songFor(zipTitle(f.name)), sec = zipSections(S.E, list);
       if (song && sec){ S.inbox.zips[song.id] = sec; (S.inbox.zipFiles = S.inbox.zipFiles || []).push(f); } else S.inbox.zipMiss.push(f.name); }
     viewWeek(); });
-  $('#syncNow').onclick = async () => { await S.store.dispatch('songstats-sync.yml', { week: id }); toast(S.store.mode === 'demo' ? 'Preview: nothing to sync' : 'Songstats sync started. About 2 minutes.'); };
+  if ($('#syncNow')) $('#syncNow').onclick = async () => { await S.store.dispatch('songstats-sync.yml', { week: id }); toast(S.store.mode === 'demo' ? 'Preview: nothing to sync' : 'Songstats sync started. About 2 minutes.'); };
   $('#btnBuild').onclick = () => runBuild(week, ready);
 }
 function bindDrop(zoneId, inputId, cb){
