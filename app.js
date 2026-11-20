@@ -327,33 +327,84 @@ function tStreaming(s, A, Ap, sn, week, cmp){
 }
 
 /* ---- setup (territories, pluggers, licensing) ---- */
+/* pluggers, licensing, DJ promo: same model as the old app */
+const DEALS = {
+  pluggers: { title: 'Pluggers', add: 'Add plugger', list: 'pluggers', status: ['shown', 'planning to show', 'active', 'ended'], stamp: 'since',
+    cols: [['region', 'Territory', 'countries'], ['name', 'Plugger', 'pluggers'], ['feedback', 'Feedback', '']] },
+  licensing: { title: 'Licensing', add: 'Add licensing', list: 'licensors', status: ['shown', 'planning to show', 'sent', 'started', 'stopped'], stamp: 'week',
+    cols: [['country', 'Territory', 'countries'], ['company', 'Company', 'licensors'], ['note', 'Note', '']], hint: '“started” counts as an active partner. Use “Russia + CIS” or “WW” for worldwide.' },
+  djpromo: { title: 'DJ promo', add: 'Add DJ pool', list: 'djpools', status: ['shown', 'planning to show', 'promo started', 'promo ended'], stamp: 'since',
+    cols: [['pool', 'DJ pool', 'djpools'], ['countries', 'Countries', 'countries']] },
+};
+function dealTable(s, kind){
+  const D = DEALS[kind], rows = s[kind] = s[kind] || [];
+  const val = (r, k) => Array.isArray(r[k]) ? r[k].join(', ') : (r[k] || '');
+  return `<section class="panel glass"><div class="ph"><h2>${D.title}</h2><span class="s">${rows.length || 'none'}</span></div>
+    ${rows.length ? `<div class="tw"><table class="deals"><thead><tr>${D.cols.map(c => `<th>${c[1]}</th>`).join('')}<th>Status</th><th>Since</th><th></th></tr></thead><tbody>
+    ${rows.map((r, i) => `<tr>${D.cols.map(([k, , dl]) => `<td><input class="cell-in" data-deal="${kind}:${i}:${k}" value="${esc(val(r, k))}" ${dl ? `list="dl-${dl}"` : ''} aria-label="${k}"></td>`).join('')}
+      <td><select class="pill sm" data-deal="${kind}:${i}:status" aria-label="Status">${D.status.map(o => `<option ${o === (r.status || 'shown') ? 'selected' : ''}>${o}</option>`).join('')}</select></td>
+      <td class="muted mono" style="font-size:11px;white-space:nowrap">${esc(wk(r[D.stamp] || ''))}</td>
+      <td><button class="toggle" data-deal-rm="${kind}:${i}" aria-label="Remove">×</button></td></tr>`).join('')}
+    </tbody></table></div>` : ''}
+    <div class="row" style="margin-top:10px"><button class="btn sm" data-deal-add="${kind}">+ ${D.add}</button>${D.hint ? `<span class="note">${D.hint}</span>` : ''}</div></section>`;
+}
+function dataLists(){
+  const L = S.D.lists || {}, opt = a => (a || []).map(x => `<option value="${esc(x)}">`).join('');
+  return `<datalist id="dl-countries">${opt(S.E.COUNTRIES.concat(['Russia + CIS', 'WW']))}</datalist><datalist id="dl-pluggers">${opt(L.pluggers)}</datalist><datalist id="dl-licensors">${opt(L.licensors)}</datalist><datalist id="dl-djpools">${opt(L.djpools)}</datalist>`;
+}
+// setup edits save themselves 1.5 s after the last change: one commit per burst of edits
+let _saveT = null;
+function autosave(s){ clearTimeout(_saveT); const b = $('#btnSave'); if (b) b.textContent = 'Saving…';
+  _saveT = setTimeout(async () => { try { await saveSongs(`Update ${s.name} setup`); const b2 = $('#btnSave'); if (b2) b2.textContent = 'Saved'; } catch {} }, 1500); }
+function bindDeals(s, re){
+  document.querySelectorAll('[data-deal]').forEach(x => x.onchange = () => { const [kind, i, k] = x.dataset.deal.split(':');
+    const r = s[kind][+i]; r[k] = k === 'countries' ? x.value.split(',').map(v => v.trim()).filter(Boolean) : x.value.trim(); autosave(s); });
+  document.querySelectorAll('[data-deal-rm]').forEach(b => b.onclick = () => { const [kind, i] = b.dataset.dealRm.split(':'); s[kind].splice(+i, 1); re(); });
+  document.querySelectorAll('[data-deal-add]').forEach(b => b.onclick = () => { const kind = b.dataset.dealAdd, D = DEALS[kind], r = { status: 'shown' };
+    D.cols.forEach(([k]) => r[k] = k === 'countries' ? [] : ''); r[D.stamp] = S.E.weekLabelFor(new Date()); (s[kind] = s[kind] || []).push(r); re();
+    setTimeout(() => { const ins = document.querySelectorAll(`[data-deal^="${kind}:${s[kind].length - 1}:"]`); if (ins[0]) ins[0].focus(); }, 30); });
+}
+// names typed in the deal tables join the suggestion lists
+function learnLists(){
+  const L = S.D.lists = S.D.lists || {}; let changed = false;
+  const add = (key, v) => { v = String(v || '').trim(); if (!v) return; L[key] = L[key] || []; if (!L[key].some(x => x.toLowerCase() === v.toLowerCase())){ L[key].push(v); changed = true; } };
+  for (const s of S.D.songs){ (s.pluggers || []).forEach(p => add('pluggers', p.name)); (s.licensing || []).forEach(l => add('licensors', l.company)); (s.djpromo || []).forEach(d => add('djpools', d.pool)); }
+  return changed;
+}
 function setupPanel(s){
   const T = s.territories || [];
   const status = (opts, v) => opts.map(o => `<option ${o === v ? 'selected' : ''}>${o}</option>`).join('');
-  return `<section class="panel glass" id="setup"><div class="ph"><h2>Territories</h2><span class="s">${T.filter(t => t.sent).length} sent of ${T.length} · sent territories drive the response rate</span></div>
-    <div class="terr">${T.map((t, i) => `<div class="t"><span class="nm">${esc(t.name)}</span><span class="seg" role="group" aria-label="Wave">${[1, 2, 3].map(w => `<button data-wave="${i}:${w}" class="${(t.wave || 1) === w ? 'on' : ''}">${w === 3 ? 'X' : w}</button>`).join('')}</span><button class="toggle ${t.sent ? 'on' : ''}" data-sent="${i}">${t.sent ? 'sent' : 'not sent'}</button><button class="toggle" data-rm="${i}" aria-label="Remove ${esc(t.name)}">×</button></div>`).join('')}</div>
-    <div class="row" style="margin-top:12px"><select class="pill" id="addTerr" aria-label="Add territory"><option value="">Add territory…</option>${S.E.COUNTRIES.filter(c => !T.some(t => t.name === c)).map(c => `<option>${esc(c)}</option>`).join('')}</select></div></section>
-  <section class="cols"><div class="panel glass c6"><div class="ph"><h2>Pluggers</h2></div>${(s.pluggers || []).length ? `<ul class="list">${s.pluggers.map((p, i) => `<li><span class="x"><b>${esc(p.name || '—')}</b><span>${esc(p.region || '')}</span></span><select class="pill" data-plug="${i}" aria-label="Status">${status(['shown', 'planning to show', 'active', 'ended'], p.status)}</select></li>`).join('')}</ul>` : '<div class="empty">No pluggers on this track.</div>'}</div>
-    <div class="panel glass c6"><div class="ph"><h2>Licensing</h2></div>${(s.licensing || []).length ? `<ul class="list">${s.licensing.map((l, i) => `<li><span class="x"><b>${esc(l.company || '—')}</b><span>${esc(l.country || '')}</span></span><select class="pill" data-lic="${i}" aria-label="Status">${status(['shown', 'planning to show', 'sent', 'started', 'stopped'], l.status)}</select></li>`).join('')}</ul>` : '<div class="empty">No licensing deals.</div>'}</div></section>
+  const WV = [[1, 'Wave 1'], [2, 'Wave 2'], [3, 'Extra']];
+  const order = T.map((t, i) => [t, i]).sort((a, b) => ((a[0].wave || 1) - (b[0].wave || 1)) || a[0].name.localeCompare(b[0].name));
+  return dataLists() + `<section class="panel glass" id="setup"><div class="ph"><h2>Territories</h2><span class="s">${T.filter(t => t.sent).length} sent of ${T.length} · sent ones count for the response rate</span></div>
+    ${T.length ? `<div class="tw"><table class="deals"><thead><tr><th>Territory</th><th>Wave</th><th>Sent</th><th></th></tr></thead><tbody>
+    ${order.map(([t, i]) => `<tr><td><b>${esc(t.name)}</b></td>
+      <td><span class="seg wave" role="group" aria-label="Wave for ${esc(t.name)}">${WV.map(([w, l]) => `<button data-wave="${i}:${w}" class="${(t.wave || 1) === w ? 'on' : ''}">${l}</button>`).join('')}</span></td>
+      <td><button class="toggle ${t.sent ? 'on' : ''}" data-sent="${i}">${t.sent ? '✓ Sent' : 'Not sent'}</button></td>
+      <td class="r"><button class="toggle" data-rm="${i}" aria-label="Remove ${esc(t.name)}">×</button></td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="empty">No territories yet.</div>'}
+    <div class="row" style="margin-top:10px"><select class="pill" id="addTerr" aria-label="Add territory"><option value="">+ Add territory</option>${S.E.COUNTRIES.filter(c => !T.some(t => t.name === c)).map(c => `<option>${esc(c)}</option>`).join('')}</select></div></section>
+  ${dealTable(s, 'pluggers')}${dealTable(s, 'licensing')}${dealTable(s, 'djpromo')}
   <section class="panel glass"><div class="ph"><h2>Track</h2></div><div class="row">
     <label class="note" for="ssid">Songstats ID</label><input id="ssid" class="search" style="max-width:160px" value="${esc(s.songstatsId || '')}" placeholder="e.g. 75j2lkun">
     <span style="flex:1"></span><button class="btn" id="btnArchive">${s.archived ? 'Bring back' : 'Archive'}</button><button class="btn primary" id="btnSave">Save changes</button></div>
 </section>`;
 }
 function bindSetup(s){
-  const T = s.territories = s.territories || [], re = () => viewTrack(s.id);
+  const T = s.territories = s.territories || [], re = () => { viewTrack(s.id); autosave(s); };
   document.querySelectorAll('[data-wave]').forEach(b => b.onclick = () => { const [i, w] = b.dataset.wave.split(':').map(Number); T[i].wave = w; re(); });
   document.querySelectorAll('[data-sent]').forEach(b => b.onclick = () => { const t = T[+b.dataset.sent]; t.sent = !t.sent; re(); });
   document.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => { T.splice(+b.dataset.rm, 1); re(); });
   const add = $('#addTerr'); if (add) add.onchange = () => { if (add.value){ T.push({ name: add.value, wave: 1, sent: false }); re(); } };
-  document.querySelectorAll('[data-plug]').forEach(x => x.onchange = () => { s.pluggers[+x.dataset.plug].status = x.value; });
-  document.querySelectorAll('[data-lic]').forEach(x => x.onchange = () => { s.licensing[+x.dataset.lic].status = x.value; });
+  bindDeals(s, re);
   const ss = $('#ssid'); if (ss) ss.onchange = () => { s.songstatsId = ss.value.trim(); };
   const ar = $('#btnArchive'); if (ar) ar.onclick = async () => { s.archived = !s.archived; await saveSongs(`${s.archived ? 'Archive' : 'Restore'} ${s.name}`); re(); };
-  const sv = $('#btnSave'); if (sv) sv.onclick = async () => { await saveSongs(`Update ${s.name} setup`); toast('Saved'); };
+  const sv = $('#btnSave'); if (sv) sv.onclick = async () => { clearTimeout(_saveT); await saveSongs(`Update ${s.name} setup`); sv.textContent = 'Saved'; };
 }
 async function saveSongs(msg){
-  try { await S.store.commit([{ path: DATA.songs, text: JSON.stringify(S.D.songs, null, 1) }], msg); engine(); }
+  const files = [{ path: DATA.songs, text: JSON.stringify(S.D.songs, null, 1) }];
+  if (learnLists()) files.push({ path: DATA.lists, text: JSON.stringify(S.D.lists, null, 1) });
+  try { await S.store.commit(files, msg); engine(); }
   catch (e){ toast('Could not save: ' + e.message, 5000); throw e; }
 }
 
