@@ -1006,21 +1006,22 @@ function renderInternalV2_(F, read, ctx, week){
 /* =====================================================================================================
  * PARTNER REPORT (growth and peaks only)
  * ===================================================================================================== */
-function renderPartnerV2_(F, prevF, week){
+function renderPartnerV2_(F, prevF, week, P){
+  // P (optional): reporting period other than "this week" {title, vs, than, sub, snaps, base, maxBars, newStations, newTitle}
   var T=F.title, L=T+' · Roton Music', pos=function(c,p){ return (c!=null&&p!=null&&c-p>0)?('+'+human_(c-p)):''; };
-  var snaps=[]; try{ snaps=trackSnaps_(T).filter(function(s){ return repWeekIdx_(s.week)<repWeekIdx_(week); }); }catch(e){}
+  var snaps=[]; if (P&&P.snaps) snaps=P.snaps; else try{ snaps=trackSnaps_(T).filter(function(s){ return repWeekIdx_(s.week)<repWeekIdx_(week); }); }catch(e){}
   var soc=[['TikTok',F.tk_views||0,(F.tk_vids||0)+' creator videos'],['YouTube',F.yt_views||0,human_(F.yt_likes)+' likes'],['Instagram',F.ig_views||0,(F.ig_vids||0)+' reels']].sort(function(a,b){return b[1]-a[1];})[0];
   // streams shown next to the social highlight: when that highlight is YouTube, count Spotify only, so YouTube is not counted twice
   var ytHi=soc[0]==='YouTube'&&soc[1]>0, STR=ytHi?(F.total_streams||0):(F.combined||0), STRp=prevF?(ytHi?prevF.total_streams:prevF.combined):null, STRL=ytHi?'Spotify streams':'Streams', STRl=ytHi?'Spotify streams':'streams';
   var lead=[];
   if (F.radio_plays!=null){ var d=prevF&&prevF.radio_plays!=null?F.radio_plays-prevF.radio_plays:0, ds=prevF&&prevF.radio_stations!=null?F.radio_stations-prevF.radio_stations:0;
-    lead.push(esc_(T)+' '+(d>0?'keeps growing on radio':'is on air')+': <b>'+human_(F.radio_plays)+' plays on '+F.radio_stations+' stations</b>'+((d>0||ds>0)?(', '+(d>0?(fmtInt_(d)+' more plays'):'')+(d>0&&ds>0?' and ':'')+(ds>0?(ds+' more stations'):'')+' than last week'):'')+'.'); }
+    lead.push(esc_(T)+' '+(d>0?'keeps growing on radio':'is on air')+': <b>'+human_(F.radio_plays)+' plays on '+F.radio_stations+' stations</b>'+((d>0||ds>0)?(', '+(d>0?(fmtInt_(d)+' more plays'):'')+(d>0&&ds>0?' and ':'')+(ds>0?(ds+' more stations'):'')+(P?P.than:' than last week')):'')+'.'); }
   var tail=[]; if (STR) tail.push('<b>'+human_(STR)+' '+STRl+'</b>'); if (soc[1]) tail.push('<b>'+human_(soc[1])+' '+soc[0]+' views</b>');
   if (tail.length) lead.push('It has passed '+tail.join(' and ')+'.');
   var stations=(F.stations_c&&F.stations_c.length)?F.stations_c:(F.top_stations||[]);
   var top=stations.slice().sort(function(a,b){return b.plays-a.plays;}).slice(0,8);
-  var p1=T_hero_({label:'Performance snapshot', artist:F.artist||'', title:T, sub:week+' · Roton Music', lead:lead.join(' ')})
-    +'<div class="body">'+T_sh_('This week','growth vs last week')
+  var p1=T_hero_({label:'Performance snapshot', artist:F.artist||'', title:T, sub:(P&&P.sub)||(week+' · Roton Music'), lead:lead.join(' ')})
+    +'<div class="body">'+T_sh_(P?P.title:'This week',P?P.vs:'growth vs last week')
     +T_nums_([['Radio plays',F.radio_plays!=null?human_(F.radio_plays):'—',pos(F.radio_plays,prevF&&prevF.radio_plays),'up'],['Radio stations',F.radio_stations!=null?String(F.radio_stations):'—',pos(F.radio_stations,prevF&&prevF.radio_stations),'up'],
               [STRL,human_(STR),pos(STR,STRp),'up'],[soc[0]+' views',human_(soc[1]),soc[2],'']])
     +'<div class="gap"></div><div class="two"><div>'+T_sh_('On air in','radio plays')+T_bars_((F.markets||[]).slice(0,8))+'</div>'
@@ -1028,14 +1029,14 @@ function renderPartnerV2_(F, prevF, week){
     +'<div class="note">★ priority station in its market</div></div></div></div>'+T_foot_(L,false);
 
   // radio growth page
-  var series=snaps.filter(function(s){return s.f&&s.f.radio_plays!=null;}).map(function(s){return {w:weekLbl_(s.week), p:s.f.radio_plays, st:s.f.radio_stations};}).slice(-6);
+  var series=snaps.filter(function(s){return s.f&&s.f.radio_plays!=null;}).map(function(s){return {w:weekLbl_(s.week), p:s.f.radio_plays, st:s.f.radio_stations};}).slice(P&&P.maxBars?-P.maxBars:-6);
   if (F.radio_plays!=null) series.push({w:weekLbl_(week), p:F.radio_plays, st:F.radio_stations});
   var p2=null;
   if (series.length>=2){
     var mx=Math.max.apply(null,series.map(function(x){return x.p;}).concat([1]));
     var chart='<div class="chart">'+series.map(function(x,i){ return '<div class="c'+(i===series.length-1?' last':'')+'"><div class="bv">'+human_(x.p)+'</div><div class="bb" style="height:'+Math.round(x.p/mx*82)+'%"></div></div>'; }).join('')+'</div>'
       +'<div class="xl">'+series.map(function(x){return '<span><b>'+esc_(x.w)+'</b>'+(x.st||0)+' stations</span>';}).join('')+'</div>';
-    var base=series.length>=5?snaps[snaps.length-4]:snaps[0]; // ~4 weeks back
+    var base=(P&&P.base!==undefined)?P.base:(series.length>=5?snaps[snaps.length-4]:snaps[0]); // ~4 weeks back, or the period start
     var bm={}; ((base&&base.f&&base.f.markets)||[]).forEach(function(m){ bm[norm_(m[0])]=m[1]; });
     var grow=(F.markets||[]).filter(function(m){ var b=bm[norm_(m[0])]; return b && m[1]>b; }).map(function(m){ return [m[0],bm[norm_(m[0])],m[1]]; }).slice(0,7);
     var facts=[], first=series[0];
@@ -1057,12 +1058,12 @@ function renderPartnerV2_(F, prevF, week){
   peaks.sort(function(a,b){return a[4]-b[4];});
   var pl={}; (F.playlists||[]).concat(F.dropped||[]).forEach(function(p){ var k=norm_(p.name); if(!pl[k]||p.followers>pl[k].followers) pl[k]=p; });
   var feat=Object.keys(pl).map(function(k){return pl[k];}).sort(function(a,b){return b.followers-a.followers;}).slice(0,5);
-  var nw=(F.new_major||[]).concat(F.new_minor||[]).filter(function(s){return ctryKey_(s.country)!==ctryKey_(HOME_MARKET)||s.tier;}).slice(0,6);
+  var nw=(P&&P.newStations?P.newStations:(F.new_major||[]).concat(F.new_minor||[])).filter(function(s){return ctryKey_(s.country)!==ctryKey_(HOME_MARKET)||s.tier;}).slice(0,6);
   var p3=T_thin_('Charts · playlists · social',false)+'<div class="body">'
     +(peaks.length?T_sh_('Best chart positions','peak reached')+T_table_(['Chart','Source','Time on chart','Peak'],peaks.slice(0,5).map(function(r){return r.slice(0,4);}),[3])+'<div class="gap"></div>':'')
     +(feat.length?T_sh_('Featured on','★ Spotify editorial')+T_table_(['Playlist','Curator','Followers'],feat.map(function(p){ var ed=/^spotify$/i.test(p.owner); return [(ed?'<span class="star">★</span> ':'')+esc_(p.name),T_g_(p.owner),T_b_(human_(p.followers))]; }),[2])+'<div class="gap"></div>':'')
     +T_sh_('Social','views to date')+T_nums_([['TikTok',human_(F.tk_views),human_(F.tk_likes)+' likes',''],['Instagram',human_(F.ig_views),human_(F.ig_likes)+' likes',''],['YouTube',human_(F.yt_views),human_(F.yt_likes)+' likes',''],['YouTube Shorts',human_(F.yt_sh_views),human_(F.yt_sh_likes)+' likes','']])
-    +(nw.length?'<div class="gap"></div>'+T_sh_('New on air this week','first play')+T_table_(['Station','Market','First play'],nw.map(function(s){return [T_star_(s)+esc_(s.station),T_g_(s.country),esc_(s.first||'')];}),[2]):'')
+    +(nw.length?'<div class="gap"></div>'+T_sh_(P?P.newTitle:'New on air this week','first play')+T_table_(['Station','Market','First play'],nw.map(function(s){return [T_star_(s)+esc_(s.station),T_g_(s.country),esc_(s.first||'')];}),[2]):'')
     +'</div>'+T_foot_(L,false);
   return T_number_(T_doc_(reportFileName_(T, week, true).replace(/\.html$/,''), [p1,p2,p3].filter(Boolean).map(T_page_)));
 }
@@ -1292,16 +1293,64 @@ function analyze(display, week, cmpWeek){
     stations: stations, airplay: airplayChartsFor_(display), ctx: ctx };
 }
 
-function renderPartner(display, week){
-  var cur = snapFor_(display, week); if (!cur) return null; var prev = loadPrevSnap_(display, week);
-  var F = clone_(cur.f); var song = songFor_(display); if (song){ F.artist = song.artist; F.title = song.name || F.title; }
-  var ctx = contextFor_(display); rankStations_(F, ctx ? ctx.focus_territories : []);
-  return renderPartnerV2_(F, prev ? clone_(prev.f) : null, week);
+/* ---- partner report periods ----
+   week     this week vs the previous report (the default, unchanged)
+   month    last 30 days        year     last 12 months
+   release  since release (totals, no baseline)
+   custom   between two dates {from, to} (yyyy-mm-dd)
+   A report week covers Monday..Sunday (ISO). The period's baseline is the last report at or before its start date. */
+var MON_ = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function weekBounds_(label){ var m = String(label).match(/Week\s+(\d+)\s+(\d{4})/); if (!m) return null; var y = +m[2], w = +m[1];
+  var j4 = new Date(Date.UTC(y, 0, 4)), mon = new Date(j4.getTime() - ((j4.getUTCDay() + 6) % 7) * 864e5 + (w - 1) * 7 * 864e5);
+  return { start: mon, end: new Date(mon.getTime() + 6 * 864e5) }; }
+function dShort_(d){ return d.getUTCDate() + ' ' + MON_[d.getUTCMonth()]; }
+function dLong_(d){ return dShort_(d) + ' ' + d.getUTCFullYear(); }
+function ymdD_(s){ var d = new Date(String(s) + 'T00:00:00Z'); return isNaN(d) ? null : d; }
+var PERIODS_ = { week: 'This week', month: 'Last 30 days', year: 'Last 12 months', release: 'Since release', custom: 'Custom period' };
+function partnerPeriod_(display, week, opt){
+  opt = opt || {}; var kind = PERIODS_[opt.period] ? opt.period : 'week', all = trackSnaps_(display);
+  var endW = week;
+  if (kind === 'custom' && opt.to){ var to = ymdD_(opt.to), best = null;
+    all.forEach(function(r){ var b = weekBounds_(r.week); if (b && b.start <= to && (!best || repWeekIdx_(r.week) > repWeekIdx_(best))) best = r.week; }); if (best) endW = best; }
+  var cur = snapFor_(display, endW); if (!cur) return null;
+  var eb = weekBounds_(endW), song = songFor_(display), rel = song && song.releaseDate ? ymdD_(song.releaseDate) : null;
+  if (kind === 'week'){ var pv = loadPrevSnap_(display, endW); return { kind: kind, week: endW, cur: cur, base: pv, P: null, label: PERIODS_.week }; }
+  var from = null;
+  if (kind === 'month') from = new Date(eb.end.getTime() - 30 * 864e5);
+  if (kind === 'year') from = new Date(eb.end.getTime() - 365 * 864e5);
+  if (kind === 'custom') from = ymdD_(opt.from);
+  var base = null;
+  if (from) all.forEach(function(r){ var b = weekBounds_(r.week); if (b && b.end <= from && repWeekIdx_(r.week) < repWeekIdx_(endW) && (!base || repWeekIdx_(r.week) > repWeekIdx_(base.week))) base = r; });
+  if (from && !base) kind = kind === 'custom' ? 'custom' : 'release';            // track is younger than the period: it is "since release"
+  var startTxt = base ? dShort_(weekBounds_(base.week).end) : (rel ? dShort_(rel) : 'release');
+  var range = (kind === 'custom' ? dShort_(from) : startTxt) + ' – ' + dLong_(eb.end);
+  var title = kind === 'release' ? 'Since release' : (kind === 'custom' ? range : PERIODS_[kind]);
+  var inWin = all.filter(function(r){ var i = repWeekIdx_(r.week); return i < repWeekIdx_(endW) && (!base || i >= repWeekIdx_(base.week)); });
+  var newSt = null;
+  if (base){ var had = {}; (base.f.stations_c || base.f.top_stations || []).forEach(function(s){ had[ctryKey_(s.country) + '|' + nk_(s.station)] = 1; });
+    newSt = (cur.f.stations_c || []).filter(function(s){ return !had[ctryKey_(s.country) + '|' + nk_(s.station)] && (ctryKey_(s.country) !== ctryKey_(HOME_MARKET) || s.tier); })
+      .sort(function(a, b){ return b.plays - a.plays; }).slice(0, 6); }
+  var P = { title: title, vs: base ? 'growth since ' + startTxt : 'totals since release', than: base ? ' than on ' + startTxt : '',
+    sub: endW + ' · ' + (kind === 'custom' ? range : kind === 'release' ? 'Since release' + (rel ? ' (' + dLong_(rel) + ')' : '') : title + ' · ' + range) + ' · Roton Music',
+    snaps: inWin, base: base, maxBars: 12, newStations: newSt || [], newTitle: kind === 'release' ? 'On air' : 'New on air in this period' };
+  return { kind: kind, week: endW, cur: cur, base: base, P: P, label: title, from: from, to: eb.end };
 }
-function partnerFileName(display, week){ var s = songFor_(display); return reportFileName_(s ? s.name : display, week, false).replace(/\.html$/, ''); }
+function renderPartner(display, week, opt){
+  var R = partnerPeriod_(display, week, opt); if (!R) return null;
+  var F = clone_(R.cur.f); var song = songFor_(display); if (song){ F.artist = song.artist; F.title = song.name || F.title; }
+  var ctx = contextFor_(display); rankStations_(F, ctx ? ctx.focus_territories : []);
+  return renderPartnerV2_(F, R.base ? clone_(R.base.f) : null, R.week, R.P);
+}
+function partnerFileName(display, week, opt){
+  var s = songFor_(display), R = partnerPeriod_(display, week, opt), name = s ? s.name : display, w = R ? R.week : week;
+  var base = reportFileName_(name, w, false).replace(/\.html$/, '');
+  if (!R || R.kind === 'week') return base;
+  if (R.kind === 'custom') return name + '_' + dShort_(R.from) + '-' + dLong_(R.to);
+  return base + ' (' + { month: 'last 30 days', year: 'last 12 months', release: 'since release' }[R.kind] + ')';
+}
 
 return {
-  DB: DB, buildTrackWeek: buildTrackWeek, analyze: analyze, renderPartner: renderPartner, partnerFileName: partnerFileName,
+  DB: DB, PERIODS: PERIODS_, weekBounds: weekBounds_, buildTrackWeek: buildTrackWeek, analyze: analyze, renderPartner: renderPartner, partnerFileName: partnerFileName,
   flushToClassify: flushToClassify_, weeklyContacts: buildWeeklyContacts_, songFor: songFor_, songKey: songKey_,
   trackSnaps: trackSnaps_, radioContacts: radioContacts_, contactListInfo: contactListInfo_, contactListCounts: contactListCounts_,
   human: human_, fmtInt: fmtInt_, rmName: rmName_, weekLabelFor: weekLabelFor_, repWeekIdx: repWeekIdx_, norm: norm_, ctryKey: ctryKey_,

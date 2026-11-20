@@ -12,6 +12,7 @@ const fmt = n => n == null || isNaN(n) ? '—' : Math.round(n).toLocaleString('e
 const human = n => n == null || isNaN(n) ? '—' : S.E.human(n);
 const wk = w => { const m = String(w || '').match(/Week\s+(\d+)/i); return m ? 'W' + m[1] : String(w || ''); };
 const weekId = w => { const m = String(w).match(/Week\s+(\d+)\s+(\d{4})/); return m ? `${m[2]}-W${m[1].padStart(2, '0')}` : w; };
+const vsLabel = c => c === 'release' ? 'since release' : c ? 'vs ' + wk(c) : '';
 const widx = w => S.E.repWeekIdx(w);
 const SHEET_ID = '19Ea-TEkzIIQoLJa-7qAAZrj6SvNoEcMQHsdqtFYzUJE';
 const DATA = { songs: 'db/songs.json', history: 'db/history.json', contacts: 'db/contacts.json', registry: 'db/registry.json', airplay: 'db/airplay.json', tasks: 'db/tasks.json', lists: 'db/lists.json' };
@@ -120,12 +121,13 @@ function viewTracks(){
     if (!last) tags.push(`<span class="tag">${s.releaseDate && s.releaseDate > new Date().toISOString().slice(0, 10) ? 'Out ' + esc(s.releaseDate.slice(5).split('-').reverse().join('.')) : 'No report yet'}</span>`);
     else { if (!fresh) tags.push(`<span class="tag">Last ${wk(last.week)}</span>`); if (F.new_adds > 0) tags.push(`<span class="tag hot">+${F.new_adds} new station${F.new_adds > 1 ? 's' : ''}</span>`);
       const pct = F.avg_day != null && P && P.avg_day ? (F.avg_day - P.avg_day) / P.avg_day * 100 : null; if (pct != null && pct <= -15) tags.push('<span class="tag warn">Spotify cooling</span>'); if (pct != null && pct >= 5) tags.push('<span class="tag ok">Spotify up</span>'); }
-    return `<a class="card glass" href="#t-${s.id}">
-      <div class="card-top">${cover(s)}<div class="ttl"><h3>${esc(s.name)}</h3><p>${esc(s.artist)}</p></div></div>
+    return `<article class="card glass" data-open="${s.id}" tabindex="0" aria-label="${esc(s.name)}">
+      <div class="card-top">${cover(s)}<div class="ttl"><h3>${esc(s.name)}</h3><p>${esc(s.artist)}</p></div>
+        <button class="cardact" data-arch="${s.id}" title="${s.archived ? 'Bring back' : 'Archive'}" aria-label="${s.archived ? 'Bring back' : 'Archive'} ${esc(s.name)}">${s.archived ? ICON_RESTORE : ICON_ARCHIVE}</button></div>
       ${`<div class="card-nums"><div class="mini"><div class="l">Radio plays</div><div class="v">${F ? human(F.radio_plays) : '—'}</div>${delta(F && F.radio_plays, P && P.radio_plays)}</div>
         <div class="mini"><div class="l">Spotify / day</div><div class="v">${F ? human(F.avg_day) : '—'}</div>${delta(F && F.avg_day, P && P.avg_day, { pct: true })}</div></div>
         ${spark(sn.slice(-10).map(r => r.f.radio_plays))}`}
-      <div class="card-foot"><div class="tags">${tags.join('') || '<span class="tag">—</span>'}</div><span class="mono faint" style="font-size:11px">${last ? wk(last.week) : ''}</span></div></a>`;
+      <div class="card-foot"><div class="tags">${tags.join('') || '<span class="tag">—</span>'}</div><span class="mono faint" style="font-size:11px">${last ? wk(last.week) : ''}</span></div></article>`;
   };
   const score = s => { const sn = snaps(s), l = sn[sn.length - 1]; return l ? (l.week === lw ? 1e9 : 0) + (l.f.radio_plays || 0) : -1; };
   const active = songs.filter(s => !s.archived).sort((a, b) => score(b) - score(a)), archived = songs.filter(s => s.archived);
@@ -133,8 +135,16 @@ function viewTracks(){
   app().innerHTML = `<section class="head"><div><div class="eyebrow">${esc(lw || '—')} · ${active.length} active · ${fmt(totalPlays)} radio plays</div><h1 class="h1">Tracks</h1></div>
       <div class="row"><button class="btn primary" data-go="week">Update this week</button></div></section>
     <section class="grid">${active.map(card).join('')}</section>
-    ${archived.length ? `<details class="fold"><summary>Archived · ${archived.length}</summary><div class="grid">${archived.map(card).join('')}</div></details>` : ''}`;
+    ${archived.length ? `<details class="fold" ${S.view.openArch ? 'open' : ''}><summary>Archived · ${archived.length} · not in weekly updates</summary><div class="grid">${archived.map(card).join('')}</div></details>` : ''}`;
+  const fold = $('details.fold'); if (fold) fold.ontoggle = () => { S.view.openArch = fold.open; };
+  document.querySelectorAll('[data-open]').forEach(c => { c.onclick = e => { if (!e.target.closest('[data-arch]')) go('t-' + c.dataset.open); }; c.onkeydown = e => { if (e.key === 'Enter') go('t-' + c.dataset.open); }; });
+  document.querySelectorAll('[data-arch]').forEach(b => b.onclick = async e => { e.stopPropagation();
+    const t = S.D.songs.find(x => x.id === b.dataset.arch); if (!t) return; t.archived = !t.archived; viewTracks();
+    try { await saveSongs(`${t.archived ? 'Archive' : 'Restore'} ${t.name}`); toast(t.archived ? `${t.name} archived · out of weekly updates` : `${t.name} is back in weekly updates`); }
+    catch { t.archived = !t.archived; viewTracks(); } });
 }
+const ICON_ARCHIVE = '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v1.5A1.75 1.75 0 0 1 15 5.995v7.255A1.75 1.75 0 0 1 13.25 15H2.75A1.75 1.75 0 0 1 1 13.25V5.995A1.75 1.75 0 0 1 0 4.25ZM2.5 6v7.25c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V6Zm-.75-3.5a.25.25 0 0 0-.25.25v1.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-1.5a.25.25 0 0 0-.25-.25ZM6 8.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5A.75.75 0 0 1 6 8.25Z"/></svg>';
+const ICON_RESTORE = '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z"/></svg>';
 
 /* ---------------- Track ---------------- */
 function viewTrack(id){
@@ -144,18 +154,19 @@ function viewTrack(id){
   const tab = S.view.tab[id] || 'overview';
   const week = S.view.week[id] && weeks.includes(S.view.week[id]) ? S.view.week[id] : weeks[0];
   const prevOf = w => { const i = weeks.indexOf(w); return weeks[i + 1] || null; };
-  let cmp = S.view.cmp[id]; if (cmp === undefined || cmp === week || (cmp && !weeks.includes(cmp))) cmp = prevOf(week);
+  let cmp = S.view.cmp[id]; if (cmp === undefined || cmp === week || (cmp && cmp !== 'release' && !weeks.includes(cmp))) cmp = prevOf(week);
   const rel = s.releaseDate ? `Released ${new Date(s.releaseDate + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}` : '';
   const head = `<section class="hero">${cover(s, 'lg')}
     <div class="meta"><div class="eyebrow"><a href="#tracks" style="text-decoration:none">Tracks</a> / ${s.archived ? 'Archived' : 'Active'}${rel ? ' · ' + rel : ''}</div>
       <h1 class="t">${esc(s.name)}</h1><div class="a">${esc(s.artist)}</div>
       ${weeks.length ? `<div class="controls"><select class="pill" id="selWeek" aria-label="Report week">${weeks.map(w => `<option ${w === week ? 'selected' : ''} value="${esc(w)}">${esc(w)}</option>`).join('')}</select>
-        <span class="vs">vs</span><select class="pill" id="selCmp" aria-label="Compare with">${weeks.filter(w => w !== week).map(w => `<option ${w === cmp ? 'selected' : ''} value="${esc(w)}">${esc(w)}</option>`).join('')}<option value="" ${!cmp ? 'selected' : ''}>no comparison</option></select>
+        <span class="vs">vs</span><select class="pill" id="selCmp" aria-label="Compare with">${weeks.filter(w => w !== week).map(w => `<option ${w === cmp ? 'selected' : ''} value="${esc(w)}">${esc(w)}</option>`).join('')}<option value="release" ${cmp === 'release' ? 'selected' : ''}>since release</option><option value="" ${!cmp ? 'selected' : ''}>no comparison</option></select>
         <span class="sp" style="flex:1"></span><button class="btn primary" id="btnPartner"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Z"/><path d="M7.25 7.689V2a.75.75 0 0 1 1.5 0v5.689l1.97-1.969a.749.749 0 1 1 1.06 1.06l-3.25 3.25a.749.749 0 0 1-1.06 0L4.22 6.78a.749.749 0 1 1 1.06-1.06l1.97 1.969Z"/></svg>Partner report</button></div>` : ''}
     </div></section>`;
   if (!weeks.length){ app().innerHTML = head + `<section class="panel glass"><div class="ph"><h2>No report yet</h2></div><p class="muted">This track gets its first numbers the next time you build a week that includes it.</p></section>` + setupPanel(s); bindSetup(s); return; }
-  const A = S.E.analyze(s.name, week, cmp || null);
-  const Ap = cmp ? S.E.analyze(s.name, cmp, null) : null;
+  const A = S.E.analyze(s.name, week, cmp === 'release' ? null : (cmp || null));
+  if (cmp === 'release'){ A.prev = { radio_plays: 0, radio_stations: 0, reach: 0, playlists_cur: 0, combined: 0, shazam_rows: 0, tk_views: 0, ig_views: 0, yt_views: 0, avg_day: null }; A.cmpWeek = 'release'; }
+  const Ap = cmp && cmp !== 'release' ? S.E.analyze(s.name, cmp, null) : null;
   const tabs = [['overview', 'Overview'], ['radio', 'Radio', A.stations.length], ['servicing', 'Servicing'], ['streaming', 'Streaming & social'], ['setup', 'Setup']];
   app().innerHTML = head + `<nav class="subtabs" role="tablist">${tabs.map(([k, l, n]) => `<button class="subtab" role="tab" data-tab="${k}" aria-selected="${k === tab}">${l}${n ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</nav><div id="tabbody"></div>`;
   const body = { overview: tOverview, radio: tRadio, servicing: tServicing, streaming: tStreaming, setup: () => setupPanel(s) }[tab](s, A, Ap, sn, week, cmp);
@@ -175,7 +186,7 @@ function pillar(label, state, ok, value, sub){
   return `<div class="pill-t"><div class="k">${label}<span class="st ${ok ? 'ok' : 'warn'}">${esc(state)}</span></div><div class="v">${value}</div><div class="s">${sub || '&nbsp;'}</div></div>`;
 }
 function tOverview(s, A, Ap, sn, week, cmp){
-  const F = A.F, P = A.prev, V = A.read.verdicts, vs = cmp ? 'vs ' + wk(cmp) : '';
+  const F = A.F, P = A.prev, V = A.read.verdicts, vs = vsLabel(cmp);
   const r = rr(A.servicing), rp = Ap ? rr(Ap.servicing) : null;
   const kp = `<section class="kpis glass">
     ${kpi('Radio plays', human(F.radio_plays), delta(F.radio_plays, P && P.radio_plays), vs)}
@@ -275,7 +286,7 @@ function tServicing(s, A){
 }
 
 function tStreaming(s, A, Ap, sn, week, cmp){
-  const F = A.F, P = A.prev, vs = cmp ? 'vs ' + wk(cmp) : '';
+  const F = A.F, P = A.prev, vs = vsLabel(cmp);
   const k = `<section class="kpis glass">
     ${kpi('Spotify / day', human(F.avg_day), delta(F.avg_day, P && P.avg_day, { pct: true }), vs)}
     ${kpi('Streams', human(F.combined), delta(F.combined, P && P.combined), 'Spotify + YouTube')}
@@ -323,23 +334,51 @@ async function saveSongs(msg){
 }
 
 /* ---- partner report sheet ---- */
+const PERIOD_TABS = [['week', 'This week'], ['month', 'Last 30 days'], ['year', 'Last 12 months'], ['release', 'Since release'], ['custom', 'Custom']];
 async function partnerSheet(s, week){
-  const html = S.E.renderPartner(s.name, week), file = S.E.partnerFileName(s.name, week);
+  const today = new Date().toISOString().slice(0, 10), b = S.E.weekBounds(week);
+  const st = S.view.partner || (S.view.partner = { period: 'week', from: s.releaseDate || '', to: b ? b.end.toISOString().slice(0, 10) : today });
   const sc = document.createElement('div'); sc.className = 'scrim';
-  sc.innerHTML = `<div class="sheet glass" role="dialog" aria-label="Partner report"><div class="sheet-h"><span class="grow">${esc(file)}.pdf</span>
-    <span class="note" id="pdfState"></span><button class="btn primary sm" id="dl">Download PDF</button><button class="btn sm" id="cl">Close</button></div><iframe title="Partner report preview"></iframe></div>`;
+  sc.innerHTML = `<div class="sheet glass" role="dialog" aria-label="Partner report"><div class="sheet-h">
+      <div class="seg period" role="tablist" aria-label="Period">${PERIOD_TABS.map(([k, l]) => `<button data-p="${k}">${l}</button>`).join('')}</div>
+      <span class="custom-range" id="cr"><input type="date" id="pFrom" aria-label="From"><span class="faint">→</span><input type="date" id="pTo" aria-label="To"></span>
+      <span class="grow"></span><button class="btn sm" id="cl">Close</button></div>
+    <div class="sheet-h sub"><span class="grow mono" id="pFile"></span><span class="note" id="pdfState"></span><button class="btn primary sm" id="dl">Download PDF</button></div>
+    <iframe title="Partner report preview"></iframe></div>`;
   document.body.appendChild(sc);
-  $('iframe', sc).srcdoc = html;
-  const close = () => sc.remove(); $('#cl', sc).onclick = close; sc.onclick = e => { if (e.target === sc) close(); };
-  const state = $('#pdfState', sc), dl = $('#dl', sc);
-  if (S.store.mode === 'demo'){ dl.disabled = true; state.textContent = 'PDF download works once the app is connected to GitHub.'; return; }
-  const path = `reports/${weekId(week)}/${file}.pdf`;
+  const close = () => { clearInterval(sc._poll); sc.remove(); };
+  $('#cl', sc).onclick = close; sc.onclick = e => { if (e.target === sc) close(); };
+  const state = $('#pdfState', sc), dl = $('#dl', sc), fromI = $('#pFrom', sc), toI = $('#pTo', sc);
+  fromI.value = st.from; toI.value = st.to; fromI.max = toI.max = today;
+  const opt = () => ({ period: st.period, from: st.from, to: st.to });
+  const fileOf = () => S.E.partnerFileName(s.name, week, opt());
+  const draw = () => {
+    sc.querySelectorAll('[data-p]').forEach(x => x.classList.toggle('on', x.dataset.p === st.period));
+    $('#cr', sc).hidden = st.period !== 'custom';
+    if (st.period === 'custom' && (!st.from || !st.to || st.from > st.to)){ $('#pFile', sc).textContent = 'Pick a start and an end date'; dl.disabled = true; return; }
+    const html = S.E.renderPartner(s.name, week, opt());
+    $('#pFile', sc).textContent = fileOf() + '.pdf'; $('iframe', sc).srcdoc = html || '<p style="font:14px sans-serif;padding:20px">No report week in that period.</p>';
+    dl.disabled = !html || S.store.mode === 'demo'; state.textContent = S.store.mode === 'demo' ? 'Download works once connected to GitHub' : '';
+    clearInterval(sc._poll);
+  };
+  sc.querySelectorAll('[data-p]').forEach(x => x.onclick = () => { st.period = x.dataset.p; draw(); });
+  fromI.onchange = () => { st.from = fromI.value; draw(); }; toI.onchange = () => { st.to = toI.value; draw(); };
+  draw();
+  const save = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name + '.pdf'; a.click(); };
   dl.onclick = async () => {
+    const file = fileOf(), path = `reports/${weekId(week)}/${file}.pdf`;
     dl.disabled = true; state.textContent = 'Fetching…';
-    const blob = await S.store.readBlob(path);
-    if (blob){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file + '.pdf'; a.click(); state.textContent = ''; dl.disabled = false; return; }
-    await S.store.dispatch('render-partner.yml', { week: weekId(week) }).catch(() => {});
-    state.textContent = 'Rendering the PDF. Try again in about a minute.'; dl.disabled = false;
+    try {
+      let blob = await S.store.readBlob(path);
+      if (blob){ save(blob, file); state.textContent = ''; dl.disabled = false; return; }
+      await S.store.dispatch('render-partner.yml', { week: weekId(week), song: s.id, period: st.period, from: st.period === 'custom' ? st.from : '', to: st.period === 'custom' ? st.to : '' });
+      state.textContent = 'Rendering on GitHub, about a minute…'; let tries = 0;
+      sc._poll = setInterval(async () => {
+        if (++tries > 24){ clearInterval(sc._poll); state.textContent = 'Still rendering. Try Download again shortly.'; dl.disabled = false; return; }
+        blob = await S.store.readBlob(path).catch(() => null);
+        if (blob){ clearInterval(sc._poll); save(blob, file); state.textContent = 'Downloaded'; dl.disabled = false; }
+      }, 8000);
+    } catch (e){ state.textContent = e.message; dl.disabled = false; }
   };
 }
 
