@@ -322,3 +322,5 @@ select.pill.sm{padding:5px 28px 5px 10px;font-size:11.5px}
 .seg.wave button{padding:4px 11px;border-radius:999px;font:600 11.5px var(--sans);white-space:nowrap}
 .seg.wave button.on{background:var(--accent);color:var(--on-accent)}
 table.deals .toggle{padding:4px 11px;font-size:11.5px;white-space:nowrap}
+.checklist li.ahead{border-top:0;padding:12px 0 4px;font:700 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent-ink)}
+.checklist li.ahead:first-child{padding-top:2px}

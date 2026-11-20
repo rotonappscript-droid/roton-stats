@@ -457,10 +457,19 @@ async function partnerSheet(s, week){
   };
 }
 
+/* tracks grouped by our artist (Raluka: BUMP, Body On Me… / Misha Miller: …), artists A–Z, newest release first */
+const ROSTER = ['Akcent', 'Alexandra Stan', 'Bastien', 'Bianca Tilici', 'Bitza', 'Eligarf', 'Fly Project', 'Mihail', 'Misha Miller', 'Otilia', 'Raluka', 'Utopia Crew', 'VH2'];
+function artistOf(s){ const a = String(s.artist || ''), low = a.toLowerCase();
+  const hit = ROSTER.map(r => [r, low.indexOf(r.toLowerCase())]).filter(x => x[1] >= 0).sort((x, y) => x[1] - y[1])[0];
+  return hit ? hit[0] : (a.split(/\s+(?:x|&|feat\.?|ft\.?)\s+|,/i)[0].trim() || 'Other'); }
+function byArtist(list){ return list.slice().sort((a, b) => artistOf(a).localeCompare(artistOf(b)) || String(b.releaseDate || '').localeCompare(String(a.releaseDate || '')) || a.name.localeCompare(b.name)); }
+function artistHead(s){ const a = artistOf(s), i = byArtist(S.D.songs.filter(x => !x.archived)).indexOf(s), prev = i > 0 ? artistOf(byArtist(S.D.songs.filter(x => !x.archived))[i - 1]) : null;
+  return a !== prev ? `<li class="ahead">${esc(a)}</li>` : ''; }
+
 /* ---------------- This week ---------------- */
 async function viewWeek(){
   const week = S.E.weekLabelFor(new Date()), id = weekId(week);
-  const active = S.D.songs.filter(s => !s.archived);
+  const active = byArtist(S.D.songs.filter(s => !s.archived));
   app().innerHTML = `<section class="head"><div><div class="eyebrow">Weekly update</div><h1 class="h1">${esc(week)}</h1></div></section><div id="wk">Loading…</div>`;
   const meta = await S.store.readJSON(`songstats/${id}/_meta.json`).catch(() => null);
   const built = new Set(Object.entries(S.D.history).filter(([, l]) => l.some(r => r.week === week)).map(([k]) => k));
@@ -474,13 +483,13 @@ async function viewWeek(){
     <div class="step glass"><div class="sn"><b>STEP 1 · ${meta ? 'AUTOMATIC' : 'YOU'}</b><i class="dot ${ssCount ? 'ok' : 'warn'}"></i></div><h3>Songstats</h3>
       <p class="mono" style="font-size:12px">${ssCount}/${active.length} · ${synced ? 'synced ' + esc(synced) : 'Track Report ZIP per track'}</p>
       <label class="drop" id="dropZip"><input type="file" accept=".zip" multiple hidden id="fileZip"><b>Drop the Track Report ZIPs</b><br>or click to choose</label>
-      <ul class="checklist">${active.map(s => `<li><span class="tick ${ssOk(s.id) ? 'on' : ''}">✓</span><span class="nm">${esc(s.name)}</span>${built.has(s.id) ? '<span class="tag ok">built</span>' : `<span class="faint mono" style="font-size:11px">${esc(updText(lastUpdate(s), true))}</span>`}</li>`).join('')}</ul>
+      <ul class="checklist">${active.map(s => `${artistHead(s)}<li><span class="tick ${ssOk(s.id) ? 'on' : ''}">✓</span><span class="nm">${esc(s.name)}</span>${built.has(s.id) ? '<span class="tag ok">built</span>' : `<span class="faint mono" style="font-size:11px">${esc(updText(lastUpdate(s), true))}</span>`}</li>`).join('')}</ul>
       ${meta ? '<button class="btn sm" id="syncNow">Sync now</button>' : ''}
       ${S.inbox.zipMiss && S.inbox.zipMiss.length ? `<p class="note">Not matched to a track: ${esc(S.inbox.zipMiss.join(', '))}</p>` : ''}</div>
     <div class="step glass"><div class="sn"><b>STEP 2 · YOU</b><i class="dot ${Object.keys(bySong).length ? 'ok' : 'warn'}"></i></div><h3>Spotify for Artists</h3>
       <p class="mono" style="font-size:12px">${Object.keys(bySong).length}/${active.length} · timeline CSV per track</p>
       <label class="drop" id="dropS4A"><input type="file" accept=".csv" multiple hidden id="fileS4A"><b>Drop the timeline CSVs</b><br>or click to choose</label>
-      <ul class="checklist">${active.map(s => `<li><span class="tick ${bySong[s.id] ? 'on' : ''}">✓</span><span class="nm">${esc(s.name)}</span><span class="faint mono" style="font-size:11px">${bySong[s.id] ? 'ready' : 'to download'}</span></li>`).join('')}</ul>
+      <ul class="checklist">${active.map(s => `${artistHead(s)}<li><span class="tick ${bySong[s.id] ? 'on' : ''}">✓</span><span class="nm">${esc(s.name)}</span><span class="faint mono" style="font-size:11px">${bySong[s.id] ? 'ready' : 'to download'}</span></li>`).join('')}</ul>
       ${unmatched.length ? `<p class="note">Not matched to a track: ${esc(unmatched.join(', '))}</p>` : ''}</div>
     <div class="step glass"><div class="sn"><b>STEP 3 · YOU</b><i class="dot ${S.inbox.rm ? 'ok' : 'warn'}"></i></div><h3>Radiomonitor</h3>
       <p class="mono" style="font-size:12px">${S.inbox.rm ? '1 file' : '0 files'} · one file, all tracks</p>
