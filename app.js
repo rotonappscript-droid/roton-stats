@@ -1,10 +1,10 @@
 import { createEngine } from './engine/rules.js';
-import { buildWeek, matchTimelines } from './engine/build.js';
+import { buildWeek, matchTimelines, zipSections, zipTitle } from './engine/build.js';
 import { importContactWorkbook, classifier } from './engine/contacts.js';
 import { GitHubStore, DemoStore, savedConnection, saveConnection } from './store.js';
 
 /* ---------------- state ---------------- */
-const S = { store: null, D: null, E: null, view: { week: {}, cmp: {}, tab: {} }, inbox: { timelines: [], rm: null }, busy: false };
+const S = { store: null, D: null, E: null, view: { week: {}, cmp: {}, tab: {} }, inbox: { timelines: [], rm: null, zips: {} }, busy: false };
 const $ = (s, el = document) => el.querySelector(s);
 const app = () => $('#view');
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -133,15 +133,33 @@ function viewTracks(){
   const active = songs.filter(s => !s.archived).sort((a, b) => score(b) - score(a)), archived = songs.filter(s => s.archived);
   const totalPlays = active.reduce((a, s) => { const sn = snaps(s), l = sn[sn.length - 1]; return a + (l && l.week === lw ? l.f.radio_plays || 0 : 0); }, 0);
   app().innerHTML = `<section class="head"><div><div class="eyebrow">${esc(lw || '—')} · ${active.length} active · ${fmt(totalPlays)} radio plays</div><h1 class="h1">Tracks</h1></div>
-      <div class="row"><button class="btn primary" data-go="week">Update this week</button></div></section>
+      <div class="row"><button class="btn" id="addTrack">Add track</button><button class="btn primary" data-go="week">Update this week</button></div></section>
     <section class="grid">${active.map(card).join('')}</section>
     ${archived.length ? `<details class="fold" ${S.view.openArch ? 'open' : ''}><summary>Archived · ${archived.length} · not in weekly updates</summary><div class="grid">${archived.map(card).join('')}</div></details>` : ''}`;
+  $('#addTrack').onclick = addTrackSheet;
   const fold = $('details.fold'); if (fold) fold.ontoggle = () => { S.view.openArch = fold.open; };
   document.querySelectorAll('[data-open]').forEach(c => { c.onclick = e => { if (!e.target.closest('[data-arch]')) go('t-' + c.dataset.open); }; c.onkeydown = e => { if (e.key === 'Enter') go('t-' + c.dataset.open); }; });
   document.querySelectorAll('[data-arch]').forEach(b => b.onclick = async e => { e.stopPropagation();
     const t = S.D.songs.find(x => x.id === b.dataset.arch); if (!t) return; t.archived = !t.archived; viewTracks();
     try { await saveSongs(`${t.archived ? 'Archive' : 'Restore'} ${t.name}`); toast(t.archived ? `${t.name} archived · out of weekly updates` : `${t.name} is back in weekly updates`); }
     catch { t.archived = !t.archived; viewTracks(); } });
+}
+function addTrackSheet(){
+  const sc = document.createElement('div'); sc.className = 'scrim';
+  sc.innerHTML = `<form class="sheet glass" style="width:min(440px,100%);grid-template-rows:auto auto" aria-label="Add track"><div class="sheet-h"><span class="grow">Add track</span><button class="btn sm" type="button" id="cl">Close</button></div>
+    <div class="form"><label>Title, as on Spotify<input id="nt" required autocomplete="off" placeholder="On And On 2026 (Akem Remix Extended)"></label>
+      <label>Artist<input id="na" required autocomplete="off" placeholder="Akcent"></label>
+      <label>Release date<input id="nr" type="date"></label>
+      <div class="row"><button class="btn primary" type="submit">Add</button><span class="note">Songstats links it on the next sync</span></div></div></form>`;
+  document.body.appendChild(sc);
+  const close = () => sc.remove(); $('#cl', sc).onclick = close; sc.onclick = e => { if (e.target === sc) close(); };
+  $('form', sc).onsubmit = async e => { e.preventDefault();
+    const name = $('#nt', sc).value.trim(), artist = $('#na', sc).value.trim(); if (!name) return;
+    if (S.E.songFor(name) && S.E.norm(S.E.songFor(name).name) === S.E.norm(name)){ toast('That track is already in the list'); return; }
+    const id = 't' + Date.now().toString(36);
+    S.D.songs.push({ id, name, artist, aliases: [], songstatsId: '', cover: '', releaseDate: $('#nr', sc).value || '', createdWeek: S.E.weekLabelFor(new Date()), archived: false, territories: [], pluggers: [], licensing: [], djpromo: [], notes: '' });
+    try { await saveSongs('Add ' + name); close(); toast(name + ' added'); go('t-' + id); } catch { S.D.songs.pop(); } };
+  setTimeout(() => $('#nt', sc).focus(), 50);
 }
 const ICON_ARCHIVE = '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M0 2.75C0 1.784.784 1 1.75 1h12.5c.966 0 1.75.784 1.75 1.75v1.5A1.75 1.75 0 0 1 15 5.995v7.255A1.75 1.75 0 0 1 13.25 15H2.75A1.75 1.75 0 0 1 1 13.25V5.995A1.75 1.75 0 0 1 0 4.25ZM2.5 6v7.25c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V6Zm-.75-3.5a.25.25 0 0 0-.25.25v1.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-1.5a.25.25 0 0 0-.25-.25ZM6 8.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5A.75.75 0 0 1 6 8.25Z"/></svg>';
 const ICON_RESTORE = '<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z"/></svg>';
@@ -390,7 +408,7 @@ async function viewWeek(){
   const meta = await S.store.readJSON(`songstats/${id}/_meta.json`).catch(() => null);
   const built = new Set(Object.entries(S.D.history).filter(([, l]) => l.some(r => r.week === week)).map(([k]) => k));
   const { bySong, unmatched } = matchTimelines(S.E, S.inbox.timelines);
-  const ssOk = sid => meta && meta.tracks && meta.tracks[sid] && meta.tracks[sid].ok;
+  const ssApi = sid => meta && meta.tracks && meta.tracks[sid] && meta.tracks[sid].ok, ssOk = sid => ssApi(sid) || !!S.inbox.zips[sid];
   const ssCount = active.filter(s => ssOk(s.id)).length;
   const synced = meta && meta.syncedAt ? new Date(meta.syncedAt).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : null;
   const rmTracks = S.inbox.rm ? active.filter(s => S.E.norm(S.inbox.rm.text).includes(S.E.norm(s.name).slice(0, 12))).length : 0;
@@ -398,8 +416,9 @@ async function viewWeek(){
   $('#wk').outerHTML = `<section class="steps">
     <div class="step glass"><div class="sn"><b>STEP 1 · AUTOMATIC</b><i class="dot ${ssCount ? 'ok' : 'warn'}"></i></div><h3>Songstats</h3>
       <p class="mono" style="font-size:12px">${synced ? `${esc(synced)} · ${ssCount}/${active.length}` : 'Thursday 21:00 · auto'}</p>
-      <ul class="checklist">${active.map(s => `<li><span class="tick ${ssOk(s.id) ? 'on' : ''}">✓</span><span class="nm">${esc(s.name)}</span>${built.has(s.id) ? '<span class="tag ok">built</span>' : ''}</li>`).join('')}</ul>
-      <button class="btn sm" id="syncNow">Sync now</button></div>
+      <ul class="checklist">${active.map(s => `<li><span class="tick ${ssOk(s.id) ? 'on' : ''}">✓</span><span class="nm">${esc(s.name)}</span>${S.inbox.zips[s.id] && !ssApi(s.id) ? '<span class="faint mono" style="font-size:11px">zip</span>' : ''}${built.has(s.id) ? '<span class="tag ok">built</span>' : ''}</li>`).join('')}</ul>
+      <div class="row"><button class="btn sm" id="syncNow">Sync now</button><label class="btn sm" id="dropZip" style="cursor:pointer"><input type="file" accept=".zip" multiple hidden id="fileZip">Add ZIP exports</label></div>
+      ${S.inbox.zipMiss && S.inbox.zipMiss.length ? `<p class="note">Not matched to a track: ${esc(S.inbox.zipMiss.join(', '))}</p>` : ''}</div>
     <div class="step glass"><div class="sn"><b>STEP 2 · YOU</b><i class="dot ${Object.keys(bySong).length ? 'ok' : 'warn'}"></i></div><h3>Spotify for Artists</h3>
       <p class="mono" style="font-size:12px">${Object.keys(bySong).length}/${active.length} · timeline CSV per track</p>
       <label class="drop" id="dropS4A"><input type="file" accept=".csv" multiple hidden id="fileS4A"><b>Drop the timeline CSVs</b><br>or click to choose</label>
@@ -414,6 +433,13 @@ async function viewWeek(){
     <button class="btn primary" id="btnBuild" ${ready.length ? '' : 'disabled'}>Build week</button></section>`;
   bindDrop('dropS4A', 'fileS4A', async files => { for (const f of files) S.inbox.timelines.push({ name: f.name, text: await f.text() }); viewWeek(); });
   bindDrop('dropRM', 'fileRM', async files => { const f = files[0]; S.inbox.rm = { name: f.name, text: /\.xlsx?$/i.test(f.name) ? await xlsxToCsv(f) : await f.text() }; viewWeek(); });
+  bindDrop('dropZip', 'fileZip', async files => {
+    const JSZip = await jszip(); S.inbox.zipMiss = [];
+    for (const f of files){ const z = await JSZip.loadAsync(await f.arrayBuffer()), list = [];
+      for (const n of Object.keys(z.files)) if (!z.files[n].dir) list.push({ name: n, text: await z.files[n].async('string') });
+      const song = S.E.songFor(zipTitle(f.name)), sec = zipSections(S.E, list);
+      if (song && sec){ S.inbox.zips[song.id] = sec; (S.inbox.zipFiles = S.inbox.zipFiles || []).push(f); } else S.inbox.zipMiss.push(f.name); }
+    viewWeek(); });
   $('#syncNow').onclick = async () => { await S.store.dispatch('songstats-sync.yml', { week: id }); toast(S.store.mode === 'demo' ? 'Preview: nothing to sync' : 'Songstats sync started. About 2 minutes.'); };
   $('#btnBuild').onclick = () => runBuild(week, ready);
 }
@@ -423,6 +449,8 @@ function bindDrop(zoneId, inputId, cb){
   z.ondragover = e => { e.preventDefault(); z.classList.add('over'); }; z.ondragleave = () => z.classList.remove('over');
   z.ondrop = e => { e.preventDefault(); z.classList.remove('over'); if (e.dataTransfer.files.length) cb([...e.dataTransfer.files]); };
 }
+let JSZipLib = null;
+async function jszip(){ if (JSZipLib) return JSZipLib; await new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; sc.onload = ok; sc.onerror = no; document.head.appendChild(sc); }); return (JSZipLib = window.JSZip); }
 let XLSXlib = null;
 async function sheetjs(){ if (XLSXlib) return XLSXlib; await new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; sc.onload = ok; sc.onerror = no; document.head.appendChild(sc); }); return (XLSXlib = window.XLSX); }
 async function xlsxToCsv(f){ const X = await sheetjs(), wb = X.read(await f.arrayBuffer()); return X.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]); }
@@ -436,7 +464,7 @@ async function runBuild(week, songs){
     await Promise.all(songs.map(async s => { const r = await S.store.readJSON(`songstats/${id}/${s.id}.json`).catch(() => null); if (r) songstats[s.id] = r; }));
     step(35, 'Running the rules…');
     const { bySong } = matchTimelines(S.E, S.inbox.timelines);
-    const res = buildWeek({ engine: S.E, week, songs, songstats, timelines: bySong, radiomon: S.inbox.rm && S.inbox.rm.text });
+    const res = buildWeek({ engine: S.E, week, songs, songstats, zips: S.inbox.zips, timelines: bySong, radiomon: S.inbox.rm && S.inbox.rm.text });
     const DB = S.E.DB;
     S.D.history = DB.history; S.D.registry = DB.registry; S.D.airplay = { manual: DB.airplayManual, tracker: DB.airplayTracker }; S.D.tasks = { tasks: DB.tasks, cands: DB.cands };
     step(65, 'Saving to GitHub…');
@@ -446,10 +474,11 @@ async function runBuild(week, songs){
       { path: DATA.songs, text: JSON.stringify(S.D.songs, null, 1) },
       ...S.inbox.timelines.map(f => ({ path: `inputs/${id}/s4a/${f.name}`, text: f.text })),
       ...(S.inbox.rm ? [{ path: `inputs/${id}/radiomonitor.csv`, text: S.inbox.rm.text }] : []),
+      ...Object.entries(S.inbox.zips).map(([sid, sec]) => ({ path: `inputs/${id}/songstats-zip/${sid}.json`, text: JSON.stringify(sec) })),
       { path: `inputs/${id}/build.json`, text: JSON.stringify({ week, builtAt: new Date().toISOString(), built: res.built, skipped: res.skipped }, null, 1) },
     ];
     await S.store.commit(files, `Build ${week}: ${res.built.length} tracks`);
-    engine(); S.inbox = { timelines: [], rm: null };
+    engine(); S.inbox = { timelines: [], rm: null, zips: {} };
     step(100, 'Done');
     toast(`${week} built for ${res.built.length} tracks`);
     setTimeout(() => go('tracks'), 700);

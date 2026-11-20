@@ -12,11 +12,21 @@ export function matchTimelines(engine, files){
   return { bySong: out, unmatched };
 }
 
-export function buildWeek({ engine, week, songs, songstats = {}, timelines = {}, radiomon = null }){
+// Songstats "Track Report" ZIP export -> sections. Files are "<Title> - <Section> - Songstats Report.csv"; titles may contain " - ".
+export function zipSections(engine, files){
+  const out = {};
+  for (const f of files){ if (!/\.csv$/i.test(f.name)) continue;
+    const parts = f.name.split('/').pop().replace(/ - Songstats Report\.csv$/i, '').split(' - ');
+    out[parts[parts.length - 1]] = engine.parseCsv(f.text); }
+  return Object.keys(out).length ? out : null;
+}
+export const zipTitle = name => String(name).replace(/\.zip$/i, '').split(/ - Songstats Track Report/i)[0].trim();
+
+export function buildWeek({ engine, week, songs, songstats = {}, zips = {}, timelines = {}, radiomon = null }){
   const built = [], skipped = [];
   for (const s of songs){
     const raw = songstats[s.id] || null, tl = timelines[s.id] || null;
-    const sections = toSections(raw);
+    const sections = toSections(raw) || zips[s.id] || null;   // API pull first, a dropped Songstats ZIP export as fallback
     if (!sections && !tl){ skipped.push({ id: s.id, name: s.name, reason: 'no data' }); continue; }
     const F = engine.buildTrackWeek({ display: s.name, week, timeline: tl, sections, radiomon, extra: extraFacts(raw) });
     if (F.cover && !s.cover) s.cover = F.cover;
